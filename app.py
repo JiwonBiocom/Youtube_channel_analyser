@@ -114,8 +114,6 @@ class YouTubeAnalyzer:
         return videos
 
 def main():
-    st.set_page_config(page_title="YouTube Channel Analyzer", layout="wide")
-    
     st.title("YouTube Channel Analyzer")
     
     # Input for API key
