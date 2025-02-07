@@ -7,11 +7,6 @@ from io import BytesIO
 import os
 from dotenv import load_dotenv
 
-
-load_dotenv()
-
-YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
-
 # 앱 설정
 st.set_page_config(
     page_title="Your App",
@@ -24,6 +19,11 @@ st.set_page_config(
         'About': None
     }
 )
+
+
+load_dotenv()
+
+YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 
 class YouTubeAnalyzer:
     def __init__(self, api_key):
