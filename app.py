@@ -12,6 +12,19 @@ load_dotenv()
 
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 
+# 앱 설정
+st.set_page_config(
+    page_title="Your App",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
+)
+
 class YouTubeAnalyzer:
     def __init__(self, api_key):
         self.youtube = build('youtube', 'v3', developerKey=api_key)
