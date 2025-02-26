@@ -176,25 +176,29 @@ def main():
                 display_df['views'] = display_df['views'].apply(format_to_10k)
                 display_df['views_subscriber_ratio'] = display_df['views_subscriber_ratio'].apply(lambda x: f"{int(round(x))}%")
                 
-                # Rename columns for display
-                display_df.columns = ['썸네일', '제목', '조회수', '조회수/구독자 비율', '좋아요 수', '댓글 수', '롱폼/쇼츠 여부']
+                # 썸네일 이미지를 HTML 태그로 변환
+                display_df['thumbnail'] = display_df['thumbnail'].apply(lambda url: f'<img src="{url}" width="120">')
                 
-                # Display the table
-                st.dataframe(
-                    display_df,
-                    column_config={
-                        "썸네일": st.column_config.ImageColumn(width="medium", help="영상 썸네일"),
-                        "제목": st.column_config.Column(width="large"),
-                        "조회수": st.column_config.Column(width="small"),
-                        "조회수/구독자 비율": st.column_config.Column(width="small"),
-                        "좋아요 수": st.column_config.Column(width="small"),
-                        "댓글 수": st.column_config.Column(width="small"),
-                        "롱폼/쇼츠 여부": st.column_config.Column(width="small")
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    height=600
+                # 제목을 클릭하면 해당 동영상 페이지로 이동하도록 HTML 앵커 태그 적용
+                display_df['title'] = display_df.apply(
+                    lambda row: f'<a href="https://www.youtube.com/watch?v={row["video_id"]}" target="_blank">{row["title"]}</a>',
+                    axis=1
                 )
+                
+                # 컬럼명 변경 후 video_id 컬럼 제거
+                display_df = display_df.rename(columns={
+                    'thumbnail': '썸네일',
+                    'title': '제목',
+                    'views': '조회수',
+                    'views_subscriber_ratio': '조회수/구독자 비율',
+                    'like_count': '좋아요 수',
+                    'comment_count': '댓글 수',
+                    '롱폼/쇼츠 여부': '롱폼/쇼츠 여부'
+                })
+                display_df = display_df.drop(columns=['video_id'])
+                
+                # HTML 테이블로 출력 (클릭 가능한 링크 포함)
+                st.markdown(display_df.to_html(escape=False, index=False), unsafe_allow_html=True)
                 
         except Exception as e:
             st.error(f"에러가 발생했습니다: {str(e)}")
