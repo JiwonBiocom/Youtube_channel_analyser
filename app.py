@@ -14,6 +14,12 @@ load_dotenv()
 
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 
+def is_youtubeshorts(video_id):
+    url = 'https://www.youtube.com/shorts/' + video_id
+    req = requests.head(url)
+    
+    return req.status_code == 200
+
 class YouTubeAnalyzer:
     def __init__(self, api_key):
         self.youtube = build('youtube', 'v3', developerKey=api_key)
@@ -71,8 +77,8 @@ class YouTubeAnalyzer:
             'thumbnail': channel_info['snippet']['thumbnails']['high']['url']
         }
     
+    # 해당 채널의 동영상 정보보
     def get_all_videos(self, channel_id):
-        """Get all videos from a channel"""
         videos = []
         next_page_token = None
         
@@ -83,7 +89,7 @@ class YouTubeAnalyzer:
                 maxResults=50,
                 type='video',
                 pageToken=next_page_token,
-                order='date'  # Get newest videos first
+                order='date'  # 최신 영상부터
             )
             response = request.execute()
             
@@ -102,7 +108,9 @@ class YouTubeAnalyzer:
                 videos.append({
                     'title': video['snippet']['title'],
                     'thumbnail': video['snippet']['thumbnails']['high']['url'],
-                    'views': int(stats['statistics']['viewCount']),
+                    'views': int(stats['statistics'].get('viewCount', 0)),
+                    'like_count': int(stats['statistics'].get('likeCount', 0)),
+                    'comment_count': int(stats['statistics'].get('commentCount', 0)),
                     'published_at': video['snippet']['publishedAt'],
                     'video_id': video['id']['videoId']
                 })
@@ -142,19 +150,22 @@ def main():
                     st.subheader(channel_info['title'])
                     st.metric("구독자 수", f"{channel_info['subscribers']:,}")
                 
-                # Get videos and create DataFrame
+                # 모든 영상 정보 가져오기
                 videos = analyzer.get_all_videos(channel_id)
                 df = pd.DataFrame(videos)
                 df['views_subscriber_ratio'] = (df['views'] / channel_info['subscribers'] * 100).round(2)
                 
                 # Sort by views/subscriber ratio
-                df = df.sort_values('views_subscriber_ratio', ascending=False).head(10)
+                df = df.sort_values('views_subscriber_ratio', ascending=False).head(10).copy()  # df = df.sort_values('views_subscriber_ratio', ascending=False).head(10)
                 
+                # 각 영상의 롱폼/쇼츠 여부 추가 ("쇼츠"면 쇼츠, 아니면 롱폼)
+                df['롱폼/쇼츠 여부'] = df['video_id'].apply(lambda vid: "쇼츠" if is_youtubeshorts(vid) else "롱폼")
+
                 # Display videos in a table
                 st.subheader("조회수/구독자 비율 TOP 10 영상")
                 
                 # Create a custom dataframe for display
-                display_df = df[['thumbnail', 'title', 'views', 'views_subscriber_ratio']].copy()
+                display_df = df[['thumbnail', 'title', 'views', 'views_subscriber_ratio', 'like_count', 'comment_count', '롱폼/쇼츠 여부']].copy()
 
                 def format_to_10k(n):
                     num = round(n / 10000, 1)  # 만 단위로 변환하고 소수점 첫째자리에서 반올림
@@ -164,27 +175,23 @@ def main():
                 # Format numbers
                 display_df['views'] = display_df['views'].apply(format_to_10k)
                 display_df['views_subscriber_ratio'] = display_df['views_subscriber_ratio'].apply(lambda x: f"{int(round(x))}%")
+                display_df['like_count'] = display_df['like_count'].apply(format_to_10k)
+                display_df['comment_count'] = display_df['comment_count'].apply(format_to_10k)
                 
                 # Rename columns for display
-                display_df.columns = ['썸네일', '제목', '조회수', '조회수/구독자 비율']
+                display_df.columns = ['썸네일', '제목', '조회수', '조회수/구독자 비율', '좋아요 수', '댓글 수', '롱폼/쇼츠 여부']
                 
                 # Display the table
                 st.dataframe(
                     display_df,
                     column_config={
-                        "썸네일": st.column_config.ImageColumn(
-                            width="medium", 
-                            help="영상 썸네일"
-                        ),
-                        "제목": st.column_config.Column(
-                            width="large"
-                        ),
-                        "조회수": st.column_config.Column(
-                            width="small"
-                        ),
-                        "조회수/구독자 비율": st.column_config.Column(
-                            width="small"
-                        )
+                        "썸네일": st.column_config.ImageColumn(width="medium", help="영상 썸네일"),
+                        "제목": st.column_config.Column(width="large"),
+                        "조회수": st.column_config.Column(width="small"),
+                        "조회수/구독자 비율": st.column_config.Column(width="small"),
+                        "좋아요 수": st.column_config.Column(width="small"),
+                        "댓글 수": st.column_config.Column(width="small"),
+                        "롱폼/쇼츠 여부": st.column_config.Column(width="small")
                     },
                     hide_index=True,
                     use_container_width=True,
