@@ -175,8 +175,6 @@ def main():
                 # Format numbers
                 display_df['views'] = display_df['views'].apply(format_to_10k)
                 display_df['views_subscriber_ratio'] = display_df['views_subscriber_ratio'].apply(lambda x: f"{int(round(x))}%")
-                display_df['like_count'] = display_df['like_count'].apply(format_to_10k)
-                display_df['comment_count'] = display_df['comment_count'].apply(format_to_10k)
                 
                 # Rename columns for display
                 display_df.columns = ['썸네일', '제목', '조회수', '조회수/구독자 비율', '좋아요 수', '댓글 수', '롱폼/쇼츠 여부']
