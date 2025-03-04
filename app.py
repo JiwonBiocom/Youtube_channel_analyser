@@ -92,17 +92,17 @@ def youtube_transcript(video_id):
                     return result
                 else:
                     print('자막은 찾았으나 내용이 비어있습니다.')
-                    return ''
+                    return '자막은 찾았으나 내용이 비어있습니다.'
             except Exception as e:
                 print(f'자막 추출 중 오류 발생: {str(e)}')
-                return ''
+                return '자막 추출 중 오류 발생'
         else:
             print('사용 가능한 자막을 찾지 못했습니다.')
-            return ''
+            return '사용 가능한 자막을 찾지 못했습니다.'
             
     except Exception as e:
-        print(f'스크립트를 불러오는 중 오류가 발생했습니다: {str(e)}')
-        return ''
+        print(f'스크립트를 불러오는 중 오류가 발생했습니다.: {str(e)}')
+        return '스크립트를 불러오는 중 오류가 발생했습니다.'
 
 class YouTubeAnalyzer:
     def __init__(self, api_key):
@@ -550,6 +550,9 @@ def main():
                 with st.spinner("영상 스크립트 수집 중..."):
                     df['스크립트'] = df['video_id'].apply(lambda vid: youtube_transcript(vid))
 
+                    # 스크립트가 빈 문자열일 경우
+                    df['스크립트'] = df['스크립트'].apply(lambda s: s if s.strip() else '스크립트를 찾을 수 없습니다.')
+
                 # # Display videos in a table
                 st.subheader("조회수/구독자 비율 TOP 10 영상")
                 
@@ -560,6 +563,12 @@ def main():
                 display_df['views'] = display_df['views'].apply(format_to_10k)
                 display_df['views_subscriber_ratio'] = display_df['views_subscriber_ratio'].apply(lambda x: f"{int(round(x))}%")
                 
+                # 스크립트 열에 스타일 적용 (오류 메시지는 이탤릭체로 표시)
+                display_df['스크립트'] = display_df['스크립트'].apply(
+                    lambda s: s if not (s.startswith('자막') or s.startswith('스크립트') or s.startswith('사용 가능한')) 
+                    else f"*{s}*"
+                )
+
                 # Rename columns for display
                 display_df.columns = ['썸네일', '제목', '조회수', '조회수/구독자 비율', '좋아요 수', '댓글 수', '롱폼/쇼츠 여부', '스크립트 (첫 3분)']
 
@@ -715,11 +724,6 @@ def main():
                 
                 # # 키워드 기반 콘텐츠 생성
                 if keyword:
-                    # st.subheader(f"'{keyword}' 콘텐츠 추천 배경")
-                    # st.markdown(content_result['background'])
-                    # print("제안 배경:\n", content_result['background'])
-                    # st.subheader(f"'{keyword}' 관련 콘텐츠 분석 및 제안")
-                    
                     with st.spinner("유튜브 콘텐츠 생성 중..."):
                         content_result = generate_video_content(client, keyword, channel_info, df.to_dict('records'), sentiment_results)
     
@@ -819,6 +823,5 @@ def main():
         except Exception as e:
             st.error(f"에러가 발생했습니다: {str(e)}")
     
-
 if __name__ == "__main__":
     main()
