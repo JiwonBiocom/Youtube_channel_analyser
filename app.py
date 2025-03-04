@@ -12,7 +12,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 from openai import OpenAI
 import google.generativeai as genai
-from google.generativeai import types
+from google.generativeai import GenerativeModel
 
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -27,7 +27,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 client = OpenAI(api_key=OPENAI_API_KEY)
-google_client = genai.Client(api_key=GEMINI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
 
 # 유튜브 쇼츠인지 아닌지 구분
 def is_youtubeshorts(video_id):
@@ -754,10 +754,13 @@ def main():
                         #     quality='standard', 
                         #     n=1, 
                         # )
-                        thumbnail_img = google_client.models.generate_images(
-                            model='imagen-3.0-generate-002',
+                        imagen_model = GenerativeModel("imagen-3.0-generate-002")
+                        thumbnail_img = imagen_model.generate_images(
                             prompt=thumbnail_prompt,
-                            config=types.GenerateImagesConfig(number_of_images=1)
+                            # 필요한 경우 추가 파라미터 설정
+                            generation_config={
+                                "number_of_images": 1
+                            }
                         )
                         # content_result['thumbnail'][i]
 
@@ -789,5 +792,6 @@ def main():
         except Exception as e:
             st.error(f"에러가 발생했습니다: {str(e)}")
     
+
 if __name__ == "__main__":
     main()
