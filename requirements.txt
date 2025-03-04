@@ -1,7 +1,8 @@
 streamlit
-google-api-python-client
 pandas
 python-dotenv
-openai
-psycopg2-binary
+google-api-python-client
 youtube-transcript-api
+openai
+google-generativeai
+psycopg2-binary
