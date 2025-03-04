@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from openai import OpenAI
-from google import genai
+import google.generativeai as genai
 from google.genai import types
 
 import psycopg2
