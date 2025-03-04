@@ -4,6 +4,7 @@ import requests
 import os
 from dotenv import load_dotenv
 import re
+import time
 from PIL import Image
 from io import BytesIO
 
@@ -38,71 +39,84 @@ def is_youtubeshorts(video_id):
     return req.status_code == 200
 
 # YouTube Transcript API로 스크립트 요약
-def youtube_transcript(video_id):
-    try:
-        # 사용 가능한 자막 목록 확인
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        
-        # 디버깅을 위해 사용 가능한 모든 자막 출력
-        print(f"\n영상 ID {video_id}의 사용 가능한 자막 목록:")
-        for transcript in transcript_list:
-            print(f"- {transcript.language} ({transcript.language_code}): {'자동 생성' if transcript.is_generated else '수동 생성'}")
-        
-        transcript = None
-        transcript_data = None
-        
-        # 순차적으로 자막 시도
+def youtube_transcript(video_id, max_retries=3, retry_delay=1.5):
+    """
+    YouTube 동영상의 스크립트를 추출하는 함수.
+    max_retries: 최대 재시도 횟수
+    retry_delay: 재시도 사이의 대기 시간(초)
+    """
+    for retry in range(max_retries):
         try:
-            # 1. 수동 한국어 자막
-            transcript = transcript_list.find_manually_created_transcript(['ko'])
-            print('수동 생성 한국어 자막을 불러왔습니다.')
-        except:
-            try:
-                # 2. 자동 생성 한국어 자막
-                transcript = transcript_list.find_generated_transcript(['ko'])
-                print('자동 생성 한국어 자막을 불러왔습니다.')
-            except:
-                try:
-                    # 3. 다른 형식의 한국어 자막
-                    for t in transcript_list:
-                        if t.language_code.startswith('ko'):
-                            transcript = t
-                            print(f'한국어 자막을 찾았습니다: {t.language_code} ({"자동 생성" if t.is_generated else "수동 생성"})')
-                            break
-                except:
-                    print('한국어 자막을 찾을 수 없습니다.')
-                    return ''
-        
-        if transcript:
-            try:
-                # 자막 텍스트 추출
-                transcript_data = transcript.fetch()
-                first_minute = []
-                current_time = 0
-                
-                for line in transcript_data:
-                    if current_time > 180:  # 180초 = 3분
-                        break
-                    first_minute.append(line['text'])
-                    current_time += line['duration']
-                
-                result = ' '.join(first_minute)
-                if result:
-                    print(f'성공적으로 {current_time:.1f}초 분량의 자막을 추출했습니다.')
-                    return result
-                else:
-                    print('자막은 찾았으나 내용이 비어있습니다.')
-                    return '자막은 찾았으나 내용이 비어있습니다.'
-            except Exception as e:
-                print(f'자막 추출 중 오류 발생: {str(e)}')
-                return '자막 추출 중 오류 발생'
-        else:
-            print('사용 가능한 자막을 찾지 못했습니다.')
-            return '사용 가능한 자막을 찾지 못했습니다.'
+            if retry > 0:
+                print(f"자막 추출 재시도 중... ({retry}/{max_retries-1})")
+                time.sleep(retry_delay)  # 재시도 사이에 대기 시간 추가
             
-    except Exception as e:
-        print(f'스크립트를 불러오는 중 오류가 발생했습니다.: {str(e)}')
-        return '스크립트를 불러오는 중 오류가 발생했습니다.'
+            # 사용 가능한 자막 목록 확인
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            
+            # 디버깅을 위해 사용 가능한 모든 자막 출력
+            print(f"\n영상 ID {video_id}의 사용 가능한 자막 목록:")
+            for transcript in transcript_list:
+                print(f"- {transcript.language} ({transcript.language_code}): {'자동 생성' if transcript.is_generated else '수동 생성'}")
+            
+            transcript = None
+            
+            # 순차적으로 자막 시도
+            try:
+                # 1. 수동 한국어 자막
+                transcript = transcript_list.find_manually_created_transcript(['ko'])
+                print('수동 생성 한국어 자막을 불러왔습니다.')
+            except Exception as e1:
+                try:
+                    # 2. 자동 생성 한국어 자막
+                    transcript = transcript_list.find_generated_transcript(['ko'])
+                    print('자동 생성 한국어 자막을 불러왔습니다.')
+                except Exception as e2:
+                    try:
+                        # 3. 다른 형식의 한국어 자막
+                        for t in transcript_list:
+                            if t.language_code.startswith('ko'):
+                                transcript = t
+                                print(f'한국어 자막을 찾았습니다: {t.language_code} ({"자동 생성" if t.is_generated else "수동 생성"})')
+                                break
+                    except Exception as e3:
+                        print('한국어 자막을 찾을 수 없습니다.')
+                        # 계속 진행하여 다른 시도를 해보기 위해 continue 하지 않음
+            
+            if transcript:
+                try:
+                    # 자막 텍스트 추출
+                    transcript_data = transcript.fetch()
+                    first_minute = []
+                    current_time = 0
+                    
+                    for line in transcript_data:
+                        if current_time > 180:  # 180초 = 3분
+                            break
+                        first_minute.append(line['text'])
+                        current_time += line['duration']
+                    
+                    result = ' '.join(first_minute)
+                    if result:
+                        print(f'성공적으로 {current_time:.1f}초 분량의 자막을 추출했습니다.')
+                        return result
+                    else:
+                        print('자막은 찾았으나 내용이 비어있습니다.')
+                except Exception as e:
+                    print(f'자막 추출 중 오류 발생: {str(e)}')
+            else:
+                print('사용 가능한 자막을 찾지 못했습니다.')
+                
+        except Exception as e:
+            print(f'스크립트를 불러오는 중 오류가 발생했습니다: {str(e)}')
+        
+        # 재시도가 남아 있으면 계속 시도
+        if retry < max_retries - 1:
+            continue
+    
+    # 모든 시도가 실패하면 명확한 메시지 반환
+    return "⚠️ 자막을 가져올 수 없습니다 (여러 번 시도했으나 실패)"
+
 
 class YouTubeAnalyzer:
     def __init__(self, api_key):
@@ -538,7 +552,7 @@ def main():
                 # 모든 영상 정보 가져오기
                 videos = analyzer.get_all_videos(channel_id)
                 df = pd.DataFrame(videos)
-                df['views_subscriber_ratio'] = (df['views'] / channel_info['subscribers'] * 100).round(2)
+                df['views_subscriber_ratio'] = (df['views'] / channel_info['subscribers'] * 100).round(3)
                 
                 # Sort by views/subscriber ratio
                 df = df.sort_values('views_subscriber_ratio', ascending=False).head(10).copy()
@@ -548,10 +562,26 @@ def main():
 
                 # 각 영상의 첫 3분 스크립트 추가
                 with st.spinner("영상 스크립트 수집 중..."):
-                    df['스크립트'] = df['video_id'].apply(lambda vid: youtube_transcript(vid))
-
-                    # 스크립트가 빈 문자열일 경우
-                    df['스크립트'] = df['스크립트'].apply(lambda s: s if s.strip() else '스크립트를 찾을 수 없습니다.')
+                    # 진행 상황 표시 추가
+                    script_progress = st.progress(0)
+                    script_status = st.empty()
+                    
+                    # 각 동영상에 대해 자막 추출 시도
+                    for i, (idx, row) in enumerate(df.iterrows()):
+                        video_id = row['video_id']
+                        video_title = row['title']
+                        
+                        # 진행 상황 업데이트
+                        progress_pct = (i + 1) / len(df)
+                        script_progress.progress(progress_pct)
+                        script_status.text(f"자막 추출 중 ({i+1}/{len(df)}): {video_title}")
+                        
+                        # 자막 추출 (최대 3번 시도, 1.5초 간격)
+                        df.at[idx, '스크립트'] = youtube_transcript(video_id, max_retries=3, retry_delay=1.5)
+                    
+                    # 진행 상태 제거
+                    script_progress.empty()
+                    script_status.empty()
 
                 # # Display videos in a table
                 st.subheader("조회수/구독자 비율 TOP 10 영상")
