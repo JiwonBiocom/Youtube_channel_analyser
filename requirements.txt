@@ -3,4 +3,4 @@ google-api-python-client
 pandas
 python-dotenv
 openai
-psycopg2
+psycopg2-binary
