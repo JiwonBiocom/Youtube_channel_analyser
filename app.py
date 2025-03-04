@@ -11,8 +11,9 @@ from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from openai import OpenAI
-import google.generativeai as genai
-from google.generativeai import GenerativeModel
+# import google.generativeai as genai
+# from google import genai
+# from google.genai import types
 
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -27,7 +28,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 client = OpenAI(api_key=OPENAI_API_KEY)
-genai.configure(api_key=GEMINI_API_KEY)
+# genai.configure(api_key=GEMINI_API_KEY)
 
 # 유튜브 쇼츠인지 아닌지 구분
 def is_youtubeshorts(video_id):
@@ -377,7 +378,16 @@ def generate_video_content(client, keyword, channel_info, top_videos_data, senti
 시청자 댓글 감정 분석:
 {sentiment_summary}
 
+또한, 제목과 썸네일 제안 배경 설명도 작성해주세요. 이 설명에는:
+1. 최근 2년 이내의 "{keyword}" 관련 트렌드 분석
+2. 해당 키워드에 관한 시청자 관심도와 인기도
+3. 참고한 온라인 정보 소스(제목과 링크)
+4. 제안한 콘텐츠가 왜 효과적일지에 대한 근거
+
 반드시 아래처럼 대괄호로 구분하는 형식을 정확히 지키면서 응답해주세요.
+[제안 배경]
+제목과 썸네일 제안 배경 설명
+
 [제목]
 제목 3가지
 
@@ -406,9 +416,15 @@ def generate_video_content(client, keyword, channel_info, top_videos_data, senti
             # 응답에서 텍스트 추출
             content_result = response.choices[0].message.content.strip()
 
+            background = ""
             title_list = []
             thumbnail_list = []
             script = ""
+            
+            # 제안 배경 추출
+            background_section = re.search(r'\[제안 배경\]\s*(.+?)(?=\[|$)', content_result, re.DOTALL)
+            if background_section:
+                background = background_section.group(1).strip()
             
             # 제목과 썸네일 추출
             title_section = re.search(r'\[제목\]\s*(.+?)(?=\[|$)', content_result, re.DOTALL)
@@ -444,6 +460,7 @@ def generate_video_content(client, keyword, channel_info, top_videos_data, senti
             return {
                 'keyword': keyword,
                 'content': content_result, 
+                'background': background, 
                 'title': title_list, 
                 'thumbnail': thumbnail_list, 
                 'script': script
@@ -455,6 +472,7 @@ def generate_video_content(client, keyword, channel_info, top_videos_data, senti
                 return {
                     'keyword': keyword,
                     'content': f"콘텐츠 생성 중 오류 발생: {str(e)}", 
+                    'background': '', 
                     'title': [], 
                     'thumbnail': [], 
                     'script': ""
@@ -463,6 +481,7 @@ def generate_video_content(client, keyword, channel_info, top_videos_data, senti
     return {
         'keyword': keyword,
         'content': "콘텐츠 생성을 수행할 수 없습니다.", 
+        'background': '', 
         'title': [], 
         'thumbnail': [], 
         'script': ""
@@ -696,10 +715,21 @@ def main():
                 
                 # # 키워드 기반 콘텐츠 생성
                 if keyword:
-                    st.subheader(f"'{keyword}'을/를 주제로한 유튜브 콘텐츠 제안")
+                    # st.subheader(f"'{keyword}' 콘텐츠 추천 배경")
+                    # st.markdown(content_result['background'])
+                    # print("제안 배경:\n", content_result['background'])
+                    # st.subheader(f"'{keyword}' 관련 콘텐츠 분석 및 제안")
                     
                     with st.spinner("유튜브 콘텐츠 생성 중..."):
                         content_result = generate_video_content(client, keyword, channel_info, df.to_dict('records'), sentiment_results)
+    
+                    # 제안 배경 표시 (이 부분을 추가)
+                    if content_result.get('background'):
+                        st.subheader("콘텐츠 추천 배경")
+                        st.markdown(content_result['background'])
+                        print("제안 배경:\n", content_result['background'])
+                    
+                    st.subheader(f"'{keyword}'을/를 주제로한 유튜브 콘텐츠 제안")
 
                     # st.markdown(content_result['content'])
                     if content_result['title'] and content_result['thumbnail']:
@@ -754,26 +784,23 @@ def main():
                         #     quality='standard', 
                         #     n=1, 
                         # )
-                        imagen_model = GenerativeModel("imagen-3.0-generate-002")
-                        thumbnail_img = imagen_model.generate_images(
-                            prompt=thumbnail_prompt,
-                            # 필요한 경우 추가 파라미터 설정
-                            generation_config={
-                                "number_of_images": 1
-                            }
-                        )
+                        # thumbnail_img = genai.generate_images(
+                        #     model="imagen-3.0-generate-002",
+                        #     prompt=thumbnail_prompt,
+                        #     n=1  # 생성할 이미지 수
+                        # )
                         # content_result['thumbnail'][i]
 
-                        image_response = requests.get(thumbnail_img.data[0].url)
+                        # image_response = requests.get(thumbnail_img.data[0].url)
 
-                        if image_response.status_code == 200:
-                            # 바이트 스트림에서 이미지 객체 생성
-                            img = Image.open(BytesIO(image_response.content))
-                            # st.dataframe 대신 st.image 사용
-                            st.image(img, caption="Imagen3로 생성된 썸네일 이미지", use_column_width=True)
+                        # if image_response.status_code == 200:
+                        #     # 바이트 스트림에서 이미지 객체 생성
+                        #     img = Image.open(BytesIO(image_response.content))
+                        #     # st.dataframe 대신 st.image 사용
+                        #     st.image(img, caption="Imagen3로 생성된 썸네일 이미지", use_column_width=True)
                             
-                            # 이미지 URL을 표시 (선택 사항)
-                            st.markdown(f"[고해상도 이미지 링크]({thumbnail_img.data[0].url})")
+                        #     # 이미지 URL을 표시 (선택 사항)
+                        #     st.markdown(f"[고해상도 이미지 링크]({thumbnail_img.data[0].url})")
                 else:
                     st.warning("키워드를 입력하세요.")
                 
