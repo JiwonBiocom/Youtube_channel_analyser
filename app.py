@@ -1,15 +1,18 @@
 import streamlit as st
-from googleapiclient.discovery import build
 import pandas as pd
-from PIL import Image
 import requests
-from io import BytesIO
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
 import re
+from PIL import Image
+from io import BytesIO
 
+from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
+
+from openai import OpenAI
+from google import genai
+from google.genai import types
 
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -21,8 +24,10 @@ load_dotenv()
 
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 client = OpenAI(api_key=OPENAI_API_KEY)
+google_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # 유튜브 쇼츠인지 아닌지 구분
 def is_youtubeshorts(video_id):
@@ -280,6 +285,55 @@ def analyze_comments_sentiment(client, comments, video_title):
     
     return "감정 분석을 수행할 수 없습니다."
 
+
+# 채널 분석 함수 
+def analyze_channel(client, display_df, comments_df, sentiment_df):
+    # 분석에 필요한 데이터 준비
+    top_videos_info = display_df.to_dict('records')
+    comments_info = comments_df.to_dict('records')
+    sentiment_info = sentiment_df.to_dict('records')
+    
+    # 프롬프트 작성
+    prompt = f"""
+    다음 유튜브 채널의 데이터를 분석하고 전반적인 채널 성과와 개선점을 분석해주세요:
+    
+    [인기 동영상 정보]
+    {str(top_videos_info[:3])}
+    
+    [인기 댓글 정보]
+    {str(comments_info[:3])}
+    
+    [시청자 감정 분석]
+    {str(sentiment_info[:3])}
+    
+    다음 항목들을 구체적인 데이터를 근거로 포함해서 분석해주세요.
+    - 채널의 주요 강점
+    - 해당 채널의 조회수/구독자 비율이 높은 콘텐츠의 공통 특징
+
+    위와 같이 분석한 항목을 토대로 아래 내용을 포함하여 입력된 키워드를 주제로한 컨텐츠를 제안해주세요.
+    - 구독자 증가를 위한 콘텐츠 전략
+    - 시청자 참여도를 높이기 위한 방안
+    """
+    
+    try:
+        # OpenAI API 호출
+        response = client.chat.completions.create(
+            model="gpt-4o-2024-08-06",
+            messages=[
+                {"role": "system", "content": "당신은 유튜브 채널 분석 전문가입니다. 데이터를 기반으로 객관적인 분석과 실행 가능한 전략을 제시합니다."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500
+        )
+        
+        # 응답에서 텍스트 추출
+        analysis_result = response.choices[0].message.content.strip()
+        return analysis_result
+        
+    except Exception as e:
+        return f"채널 분석 중 오류 발생: {str(e)}"
+
 # 새로 만들 동영상 제목, 썸네일, 스크립트 추천
 def generate_video_content(client, keyword, channel_info, top_videos_data, sentiment_results):
     # 채널 정보 추출
@@ -440,7 +494,9 @@ def main():
     channel_url = st.text_input("YouTube Channel URL (e.g., https://youtube.com/@channelname)")
     keyword = st.text_input("동영상 제작에 사용할 키워드를 입력하세요")
     
-    if api_key and channel_url:
+    analyze_button = st.button("분석 시작", type="primary")
+
+    if api_key and channel_url and keyword and analyze_button:
         try:
             analyzer = YouTubeAnalyzer(api_key)
             
@@ -475,7 +531,7 @@ def main():
                 with st.spinner("영상 스크립트 수집 중..."):
                     df['스크립트'] = df['video_id'].apply(lambda vid: youtube_transcript(vid))
 
-                # Display videos in a table
+                # # Display videos in a table
                 st.subheader("조회수/구독자 비율 TOP 10 영상")
                 
                 # Create a custom dataframe for display
@@ -507,7 +563,8 @@ def main():
                 )
                 print("조회수/구독자 비율 TOP 10 영상\n", display_df)
                 
-                # 인기 댓글 보여주기 섹션 추가
+                
+                # # 인기 댓글 보여주기 섹션 추가
                 st.subheader("TOP 10 영상의 인기 댓글")
                 
                 # 각 동영상별로 댓글 가져오기
@@ -573,7 +630,8 @@ def main():
                     st.info("댓글을 가져올 수 없습니다.")
                     print("댓글을 가져올 수 없습니다.")
                 
-                # 감정 분석 수행 (선택 사항)
+                
+                # # 감정 분석 수행 (선택 사항)
                 st.subheader("각 동영상 댓글의 감정 분석")
                 
                 # 감정 분석 진행 상황 표시
@@ -622,8 +680,21 @@ def main():
                     use_container_width=True
                 )
                 print("동영상 댓글의 감정 분석\n", sentiment_df)
+                
 
-                # 키워드 기반 콘텐츠 생성
+                # # 채널 분석
+                st.subheader("채널 분석 및 개선 전략")
+
+                with st.spinner("채널 분석 중..."):
+                    # 채널 분석 수행
+                    channel_analysis = analyze_channel(client, display_df, comments_df, sentiment_df)
+                    
+                    # 분석 결과 표시
+                    st.markdown(channel_analysis)
+                    print("채널 분석 결과:\n", channel_analysis)
+                    
+                
+                # # 키워드 기반 콘텐츠 생성
                 if keyword:
                     st.subheader(f"'{keyword}'을/를 주제로한 유튜브 콘텐츠 제안")
                     
@@ -675,14 +746,20 @@ def main():
 무엇보다도 가장 중요한 것은 다음이야:
 - 타겟층 고려
 - 이미지만 보고도 어떤 내용이 담겨있을지 추측 가능
-'''  # content_result['thumbnail'][i]
-                        thumbnail_img = client.images.generate(
-                            model='dall-e-3', 
-                            prompt=thumbnail_prompt, 
-                            size='1792x1024', 
-                            quality='standard', 
-                            n=1, 
+'''
+                        # thumbnail_img = client.images.generate(
+                        #     model='dall-e-3', 
+                        #     prompt=thumbnail_prompt, 
+                        #     size='1792x1024', 
+                        #     quality='standard', 
+                        #     n=1, 
+                        # )
+                        thumbnail_img = google_client.models.generate_images(
+                            model='imagen-3.0-generate-002',
+                            prompt=thumbnail_prompt,
+                            config=types.GenerateImagesConfig(number_of_images=1)
                         )
+                        # content_result['thumbnail'][i]
 
                         image_response = requests.get(thumbnail_img.data[0].url)
 
@@ -690,7 +767,7 @@ def main():
                             # 바이트 스트림에서 이미지 객체 생성
                             img = Image.open(BytesIO(image_response.content))
                             # st.dataframe 대신 st.image 사용
-                            st.image(img, caption="DALL-E로 생성된 썸네일 이미지", use_column_width=True)
+                            st.image(img, caption="Imagen3로 생성된 썸네일 이미지", use_column_width=True)
                             
                             # 이미지 URL을 표시 (선택 사항)
                             st.markdown(f"[고해상도 이미지 링크]({thumbnail_img.data[0].url})")
@@ -711,7 +788,6 @@ def main():
         
         except Exception as e:
             st.error(f"에러가 발생했습니다: {str(e)}")
-    
 
 if __name__ == "__main__":
     main()
