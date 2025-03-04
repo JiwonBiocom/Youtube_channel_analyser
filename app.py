@@ -12,7 +12,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 from openai import OpenAI
 import google.generativeai as genai
-from google.genai import types
+from google.generativeai import types
 
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
@@ -788,6 +788,6 @@ def main():
         
         except Exception as e:
             st.error(f"에러가 발생했습니다: {str(e)}")
-
+    
 if __name__ == "__main__":
     main()
