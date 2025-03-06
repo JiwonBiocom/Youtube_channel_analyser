@@ -587,7 +587,7 @@ def blog_summarizer(client, text):
 
 
 st.title("유튜브 채널 분석기")
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["채널 데이터 수집", "키워드 기반 데이터 수집", "채널 데이터 조회", "키워드 데이터 조회", "블로그 분석기"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["채널 데이터 수집", "키워드 기반 데이터 수집", "채널 데이터 조회", "키워드 데이터 조회", "블로그 분석기", "블로그 통합 분석"])
 
 # 탭 1: 채널 데이터 수집 탭
 with tab1:
@@ -1079,37 +1079,162 @@ with tab5:
     st.subheader("블로그 분석기")
 
     analysis_keyword = st.text_input('블로그 분석을 위한 키워드를 입력하세요. 분석 그룹의 이름을 결정합니다.')
-    blog_url = st.text_input('분석할 블로그 주소를 입력하세요.')  # 나중에 10개로 늘릴 예정
-    analyse_button = st.button("블로그 분석 시작", type="primary")
     
-    if blog_url and analysis_keyword and analyse_button:
-        with st.spinner("블로그 내용을 분석 중입니다..."):
+    # # 블로그 한개 분석
+    # blog_url = st.text_input('분석할 블로그 주소를 입력하세요.')  # 나중에 10개로 늘릴 예정
+    # analyse_button = st.button("블로그 분석 시작", type="primary")
+    
+    # if blog_url and analysis_keyword and analyse_button:
+    #     with st.spinner("블로그 내용을 분석 중입니다..."):
+    #         try:
+    #             extracted_data = blog_content(blog_url)
+
+    #             blog_summary = blog_summarizer(openai_client, extracted_data['content'])
+
+    #             conn = connect_postgres()
+    #             cur = conn.cursor()
+
+    #             # RETURNING 절 추가
+    #             cur.execute("""
+    #             INSERT INTO blog_summary (keyword, url, summary) 
+    #             VALUES (%s, %s, %s) RETURNING id
+    #             """, (analysis_keyword, blog_url, blog_summary))
+                
+    #             # 반환된 id 가져오기
+    #             inserted_id = cur.fetchone()[0]
+
+    #             conn.commit()
+    #             cur.close()
+    #             conn.close()
+
+    #             st.subheader("블로그 요약 결과")
+    #             st.write(blog_summary)
+                
+    #             st.success(f"블로그 분석 결과가 성공적으로 저장되었습니다! (ID: {inserted_id})")
+    #         except Exception as e:
+    #             st.error(f"블로그 분석 중 오류가 발생했습니다: {str(e)}")
+    
+    # # 블로그 여러개 분석
+    blog_urls_container = st.container()  # 컨테이너 생성
+    
+    # 세션 상태에 URL 리스트 초기화
+    if 'blog_urls' not in st.session_state:
+        st.session_state.blog_urls = [""] * 10  # 10개의 빈 URL로 초기화
+    
+    # 5개씩 두 열로 나눠서 URL 입력 필드 생성
+    col1, col2 = st.columns(2)
+    
+    # 왼쪽 컬럼 (0-4번 URL)
+    with col1:
+        for i in range(5):
+            st.text_input(
+                f"블로그 주소 {i+1}",
+                value=st.session_state.blog_urls[i],
+                key=f"blog_url_{i}"
+            )
+            # 입력 후 세션 상태 업데이트
+            st.session_state.blog_urls[i] = st.session_state[f"blog_url_{i}"]
+    
+    # 오른쪽 컬럼 (5-9번 URL)
+    with col2:
+        for i in range(5, 10):
+            st.text_input(
+                f"블로그 주소 {i+1}",
+                value=st.session_state.blog_urls[i],
+                key=f"blog_url_{i}"
+            )
+            # 입력 후 세션 상태 업데이트
+            st.session_state.blog_urls[i] = st.session_state[f"blog_url_{i}"]
+    
+    # 유효한 URL의 수 계산 (빈 문자열이 아닌 URL)
+    valid_urls = [url for url in st.session_state.blog_urls if url.strip()]
+    
+    # 분석 버튼과 상태 표시
+    analyse_button = st.button("블로그 분석 시작", type="primary", disabled=len(valid_urls) == 0 or not analysis_keyword)
+    
+    # 블로그 분석 실행
+    if analysis_keyword and valid_urls and analyse_button:
+        results_container = st.container()  # 분석 결과 저장용 컨테이너
+
+        progress_bar = st.progress(0)  # 진행 상황 표시
+        
+        # 성공 및 실패 결과 수집
+        success_count = 0
+        failed_urls = []
+        saved_ids = []
+        
+        # 각 URL 처리
+        for i, url in enumerate(valid_urls):
             try:
-                extracted_data = blog_content(blog_url)
-
-                blog_summary = blog_summarizer(openai_client, extracted_data['content'])
-                # print(blog_summary)
-
+                with st.spinner(f"블로그 분석 중... ({i+1}/{len(valid_urls)})"):
+                    extracted_data = blog_content(url)  # 블로그 내용 추출
+                    
+                    blog_summary = blog_summarizer(openai_client, extracted_data['content'])  # 블로그 요약
+                    
+                    # DB에 저장
+                    conn = connect_postgres()
+                    cur = conn.cursor()
+                    
+                    cur.execute("""INSERT INTO blog_summary (keyword, url, summary) VALUES (%s, %s, %s) RETURNING id""", (analysis_keyword, url, blog_summary))
+                    
+                    inserted_id = cur.fetchone()[0]
+                    saved_ids.append(inserted_id)
+                    
+                    conn.commit()
+                    cur.close()
+                    conn.close()
+                    
+                    # 성공 카운트 증가
+                    success_count += 1
+                
+            except Exception as e:
+                # 실패한 URL 기록
+                failed_urls.append((url, str(e)))
+                
+                # 에러 발생 시 DB 연결 닫기
+                try:
+                    if 'conn' in locals() and conn:
+                        conn.rollback()
+                        cur.close()
+                        conn.close()
+                except:
+                    pass
+            
+            # 진행 상황 업데이트
+            progress_bar.progress((i + 1) / len(valid_urls))
+        
+        # 분석 완료 후 결과 표시
+        with results_container:
+            st.subheader("블로그 분석 결과")
+            
+            if success_count > 0:
+                st.success(f"{success_count}개의 블로그가 성공적으로 분석되었습니다.")
+                
+                # 저장된 결과 가져오기
                 conn = connect_postgres()
                 cur = conn.cursor()
-
-                # RETURNING 절 추가
-                cur.execute("""
-                INSERT INTO blog_summary (keyword, url, summary) 
-                VALUES (%s, %s, %s) RETURNING id
-                """, (analysis_keyword, blog_url, blog_summary))
                 
-                # 반환된 id 가져오기
-                inserted_id = cur.fetchone()[0]
-
-                conn.commit()
-                cur.close()
-                conn.close()
-
-                st.subheader("블로그 요약 결과")
-                st.write(blog_summary)
+                # IN 구문을 위한 문자열 생성
+                ids_str = ",".join(str(id) for id in saved_ids)
                 
-                st.success(f"블로그 분석 결과가 성공적으로 저장되었습니다! (ID: {inserted_id})")
-            except Exception as e:
-                st.error(f"블로그 분석 중 오류가 발생했습니다: {str(e)}")
+                if ids_str:
+                    cur.execute(f"""SELECT id, url, summary FROM blog_summary WHERE id IN ({ids_str}) ORDER BY id""")
+                    results = cur.fetchall()
+                    
+                    cur.close()
+                    conn.close()
+                    
+                    # 결과 표시
+                    for result in results:
+                        with st.expander(f"블로그: {result[1]}"):
+                            st.markdown(f"**ID**: {result[0]}")
+                            st.markdown("**요약**:")
+                            st.write(result[2])
+            
+            # 실패한 URL 표시
+            if failed_urls:
+                st.error(f"{len(failed_urls)}개의 블로그 분석에 실패했습니다.")
+                for url, error in failed_urls:
+                    with st.expander(f"실패한 URL: {url}"):
+                        st.error(f"오류: {error}")
             
