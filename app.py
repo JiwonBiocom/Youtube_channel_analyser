@@ -23,6 +23,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
+
 # 유튜브 쇼츠인지 아닌지 구분
 def is_youtubeshorts(video_id):
     url = 'https://www.youtube.com/shorts/' + video_id
@@ -143,7 +144,8 @@ def search_unique_id():
     
     return search_id
 
-def save_channel_info(search_unique_id, keyword, channel_url, channel_name, channel_subscribers, 
+# 채널 정보 저장
+def save_info(table_name, search_unique_id, keyword, channel_url, channel_name, channel_subscribers, 
                       video_id, video_title, video_thumbnail, video_view_count, video_like_count, video_comment_count, video_view_subscriber_ratio, 
                       is_shorts, transcript, published_at, top_comments):
     conn = connect_postgres()
@@ -159,8 +161,8 @@ def save_channel_info(search_unique_id, keyword, channel_url, channel_name, chan
     comment_2 = comments[1]['text'] if len(comments) > 1 else "내용 없음"
     comment_3 = comments[2]['text'] if len(comments) > 2 else "내용 없음"
     
-    cur.execute("""
-    INSERT INTO channel_info (
+    cur.execute(f"""
+    INSERT INTO {table_name} (
         search_unique_id, keyword, channel_url, channel_name, channel_subscribers, 
         video_id, video_title, video_thumbnail, video_view_count, video_like_count, video_comment_count, video_view_subscriber_ratio, 
         is_shorts, transcript, published_at, comment_1, comment_2, comment_3)
@@ -308,6 +310,7 @@ class YouTubeAnalyzer:
             return [{'author': '댓글 없음', 'text': '댓글을 가져올 수 없습니다 (비활성화되었거나 접근 불가)', 'like_count': 0, 'published_at': ''}]
 
 
+# 채널 정보 불러오기
 def get_channel_info(search_id):
     conn = connect_postgres()
     cur = conn.cursor()
@@ -336,8 +339,65 @@ def get_channel_info(search_id):
     
     return df
 
+# 키워드로 동영상 정보 불러오기
+def fetch_youtube_data(search_query, max_results=50):
+    youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+    
+    videos_data = []
+    request = youtube.search().list(
+        q=search_query,
+        part='snippet',
+        type='video',
+        maxResults=min(50, max_results)
+    )
+    
+    response = request.execute()
+    video_ids = [item['id']['videoId'] for item in response['items']]
+    stats_request = youtube.videos().list(
+        part='statistics',
+        id=','.join(video_ids)
+    )
+    stats_response = stats_request.execute()
+    channel_ids = [item['snippet']['channelId'] for item in response['items']]
+    channels_request = youtube.channels().list(
+        part='statistics',
+        id=','.join(set(channel_ids))
+    )
+    channels_response = channels_request.execute()
+    
+    channel_subscribers = {
+        channel['id']: int(channel['statistics'].get('subscriberCount', 0))
+        for channel in channels_response['items']
+    }
+    
+    for video, stats in zip(response['items'], stats_response['items']):
+        views = int(stats['statistics'].get('viewCount', 0))
+        if views >= 1000:
+            video_id = video['id']['videoId']
+            channel_id = video['snippet']['channelId']
+            subscriber_count = channel_subscribers.get(channel_id, 0)
+            view_sub_ratio = (views / subscriber_count) * 100 if subscriber_count > 0 else 0
+            script = youtube_transcript(video_id)
+            is_shorts = is_youtubeshorts(video_id)
+            videos_data.append({
+                'title': video['snippet']['title'], 
+                'channel': video['snippet']['channelTitle'], 
+                'publishedAt': video['snippet']['publishedAt'], 
+                'views': views, 
+                'subscribers': subscriber_count, 
+                'view_sub_ratio': round(view_sub_ratio, 2),
+                'likes': int(stats['statistics'].get('likeCount', 0)), 
+                'comments': int(stats['statistics'].get('commentCount', 0)), 
+                'description': video['snippet']['description'], 
+                'url': f"https://www.youtube.com/watch?v={video_id}", 
+                'thumbnail': video['snippet']['thumbnails']['high']['url'], 
+                '1min_script': script,
+                'is_shorts': is_shorts
+            })
+    
+    return pd.DataFrame(videos_data)
 
-# # 동영상 분석 # #
+# # 채널 동영상 분석 # #
 # 영상 데이터 분석 함수
 def analyze_video_data(client, videos_data, is_shorts=False):
     """
@@ -446,7 +506,8 @@ def save_video_analysis(search_unique_id, video_id, video_title, is_shorts, anal
     cur = conn.cursor()
     
     cur.execute("""
-        INSERT INTO channel_analysis (search_unique_id, video_id, video_title, is_shorts, llm_analysis) VALUES (%s, %s, %s, %s, %s)""", 
+        INSERT INTO channel_analysis (search_unique_id, video_id, video_title, is_shorts, llm_analysis) VALUES (%s, %s, %s, %s, %s)
+        """, 
         (search_unique_id, video_id, video_title, is_shorts, analysis_result)
     )
     
@@ -454,15 +515,15 @@ def save_video_analysis(search_unique_id, video_id, video_title, is_shorts, anal
     cur.close()
     conn.close()
 
+
 st.title("유튜브 채널 분석기")
+tab1, tab2, tab3, tab4 = st.tabs(["채널 데이터 수집", "키워드 기반 데이터 수집", "채널 데이터 조회", "키워드 데이터 조회"])
 
-tab1, tab2 = st.tabs(["데이터 수집", "데이터 조회"])
-
-# 데이터 수집 탭
+# 탭 1: 채널 데이터 수집 탭
 with tab1:
-    channel_url = st.text_input("YouTube Channel URL (e.g., https://youtube.com/@channelname)")
+    st.subheader("채널 데이터 불러오기")
+    channel_url = st.text_input("유튜브 채널 주소 (e.g., https://youtube.com/@channelname)")
     keyword = st.text_input("동영상 제작에 사용할 키워드를 입력하세요")
-
     submit_button = st.button("데이터 수집 및 저장", type="primary")
 
     if submit_button and channel_url and keyword:
@@ -500,26 +561,18 @@ with tab1:
                 for i, video in enumerate(top_videos):
                     video_id = video['video_id']
                     
-                    # 쇼츠 여부 확인
-                    is_shorts = is_youtubeshorts(video_id)
+                    is_shorts = is_youtubeshorts(video_id)  # 쇼츠 여부 확인
+                    transcript = youtube_transcript(video_id)  # 자막 가져오기
+                    view_subscriber_ratio = video['views'] / channel_stats['subscribers'] if channel_stats['subscribers'] > 0 else 0  # 조회수/구독자 비율 계산
+                    comments = analyzer.get_top_comments(video_id, 3)  # 댓글 가져오기
                     
-                    # 자막 가져오기
-                    transcript = youtube_transcript(video_id)
-                    
-                    # 조회수/구독자 비율 계산
-                    view_subscriber_ratio = video['views'] / channel_stats['subscribers'] if channel_stats['subscribers'] > 0 else 0
-                    
-                    # 댓글 가져오기
-                    comments = analyzer.get_top_comments(video_id, 3)
-                    
-                    save_channel_info(
-                        pk_id, keyword, channel_url, channel_stats['title'], channel_stats['subscribers'], 
+                    save_info(
+                        'channel_info', pk_id, keyword, channel_url, channel_stats['title'], channel_stats['subscribers'], 
                         video_id, video['title'], video['thumbnail'], video['views'], video['like_count'], video['comment_count'], view_subscriber_ratio,
                         is_shorts, transcript, video['published_at'], comments
                     )
                     
-                    # 진행상황 업데이트
-                    progress_bar.progress((i + 1) / len(top_videos))
+                    progress_bar.progress((i + 1) / len(top_videos))  # 진행상황 업데이트
                 
                 st.success(f"성공적으로 채널 '{channel_stats['title']}'의 데이터를 저장했습니다!")
 
@@ -528,10 +581,84 @@ with tab1:
     elif submit_button:
         st.warning("모든 필드를 입력해주세요: 채널 URL, 키워드, 검색 ID")
 
-# 탭 2: 데이터 조회 탭
+# 탭 2: 키워드 기반 데이터 수집 탭
 with tab2:
-    st.subheader("저장된 데이터 조회")
+    st.subheader("키워드로 유튜브 동영상 검색하기")
     
+    query = st.text_input("분석하고 싶은 키워드를 입력하세요:")
+    max_results = st.slider("분석할 영상 수", 10, 50, 30)
+    search_button = st.button("검색 시작", type="primary")
+
+    if query and search_button:
+        with st.spinner("데이터를 수집하고 분석 중입니다..."):
+            try:
+                # 검색 고유 ID 생성
+                pk_id = search_unique_id()
+
+                df = fetch_youtube_data(query, max_results)
+                
+                st.subheader("📊 기본 통계")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("총 조회수", f"{df['views'].sum():,}")
+                with col2:
+                    st.metric("평균 좋아요", f"{int(df['likes'].mean()):,}")
+                with col3:
+                    st.metric("평균 댓글", f"{int(df['comments'].mean()):,}")
+                
+                # 검색 결과를 데이터베이스에 저장
+                progress_bar = st.progress(0)
+                st.text("검색 결과를 데이터베이스에 저장 중...")
+                
+                # YouTube API 객체 생성 (댓글 정보를 가져오기 위함)
+                analyzer = YouTubeAnalyzer(YOUTUBE_API_KEY)
+                
+                # 각 동영상 정보 처리 및 저장
+                for i, (_, video) in enumerate(df.iterrows()):
+                    video_id = video['url'].split('v=')[1] if 'v=' in video['url'] else video['url'].split('/')[-1]
+                    
+                    # 댓글 정보 가져오기
+                    comments = analyzer.get_top_comments(video_id, 3)
+                    
+                    # channel_url 생성 (채널 이름으로부터)
+                    channel_url = f"https://www.youtube.com/channel/{video_id}"
+                    
+                    # 데이터베이스에 저장
+                    save_info(
+                        'keyword_info', pk_id, query, channel_url, video['channel'], video['subscribers'],
+                        video_id, video['title'], video['thumbnail'], video['views'], video['likes'], video['comments'], video['view_sub_ratio'],
+                        video['is_shorts'], video['1min_script'], video['publishedAt'], comments
+                    )
+                    
+                    # 진행 상황 업데이트
+                    progress_bar.progress((i + 1) / len(df))
+                
+                st.success(f"성공적으로 키워드 '{query}'에 대한 {len(df)}개의 동영상 데이터를 저장했습니다! (검색 ID: {pk_id})")
+                
+                st.subheader("🔥 인기 영상 TOP 5")
+                top_videos = df.nlargest(5, 'views')
+                top_videos['views'] = top_videos['views'].apply(lambda x: format_to_10k(x) + " 건")
+                top_videos['subscribers'] = top_videos['subscribers'].apply(lambda x: format_to_10k(x) + " 명")
+                top_videos['view_sub_ratio'] = top_videos['view_sub_ratio'].apply(lambda x: f"{round(x)}%")
+                top_videos['thumbnail'] = top_videos.apply(lambda x: f'<a href="{x["url"]}" target="_blank"><img src="{x["thumbnail"]}" width="240"/></a>', axis=1)
+                display_videos = top_videos[['thumbnail', 'title', 'channel', 'views', 'subscribers', 'view_sub_ratio', 'is_shorts', '1min_script']]
+                display_videos.columns = ['썸네일', '제목', '채널명', '조회수', '구독자수', '조회수/구독자 비율', '쇼츠', '최초 3분 스크립트']
+                display_videos['쇼츠'] = display_videos['쇼츠'].map({True: '쇼츠', False: '롱폼'})
+                st.markdown(display_videos.to_html(escape=False, index=False), unsafe_allow_html=True)
+                
+                df['engagement_rate'] = (df['likes'] + df['comments']) / df['views'] * 100
+                st.subheader("📈 참여도 분석")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("평균 참여율", f"{df['engagement_rate'].mean():.2f}%")
+                with col2:
+                    st.metric("최고 참여율", f"{df['engagement_rate'].max():.2f}%")
+            except Exception as e:
+                st.error(f"오류가 발생했습니다: {str(e)}")
+
+# 탭 3: 채널 데이터 조회 탭
+with tab3:
+    st.subheader("저장된 채널 데이터 조회")
     search_id_input = st.number_input("조회할 검색 ID를 입력하세요", min_value=1, step=1)
     
     # 세션 상태 초기화
@@ -600,7 +727,27 @@ with tab2:
                 
                 # 전체 데이터 표시
                 st.subheader("모든 영상 데이터")
-                st.dataframe(display_df, use_container_width=True)
+                # st.dataframe(display_df, use_container_width=True)
+                st.dataframe(
+                    display_df,
+                    column_config={
+                        "썸네일": st.column_config.ImageColumn(width="large", help="영상 썸네일"),
+                        "채널명": st.column_config.Column(width="medium"), 
+                        "제목": st.column_config.Column(width="large"),
+                        "조회수": st.column_config.Column(width="small"),
+                        "좋아요": st.column_config.Column(width="small"),
+                        "댓글 수": st.column_config.Column(width="small"),
+                        "조회수/구독자 비율": st.column_config.Column(width="small"),
+                        "쇼츠": st.column_config.Column(width="small"), 
+                        "댓글1": st.column_config.Column(width="large"), 
+                        "댓글2": st.column_config.Column(width="large"), 
+                        "댓글3": st.column_config.Column(width="large"), 
+                        "스크립트": st.column_config.TextColumn(width="large")
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    height=600
+                )
                 
                 # 분석 섹션
                 st.subheader("채널 데이터 분석하기")
@@ -630,13 +777,7 @@ with tab2:
                                 
                                 # 분석 내용 저장
                                 for _, row in shorts_df.iterrows():
-                                    save_video_analysis(
-                                        search_id_input,
-                                        row['video_id'],
-                                        row['제목'],
-                                        True,
-                                        shorts_analysis
-                                    )
+                                    save_video_analysis(search_id_input, row['video_id'], row['제목'], True, shorts_analysis)
                                 
                                 st.success("쇼츠 영상 분석 완료 및 저장되었습니다!")
                         
@@ -676,12 +817,15 @@ with tab2:
                                 st.success("롱폼 영상 분석 완료 및 저장되었습니다!")
                         
                         # 저장된 분석 결과 표시
-                        st.write(st.session_state.longform_analysis_result)
-                
+                        st.write(st.session_state.longform_analysis_result)   
             else:
                 st.warning(f"검색 ID {search_id_input}에 해당하는 데이터가 없습니다.")
                 st.session_state.found_data = None
         except Exception as e:
             st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
             st.session_state.found_data = None
-    
+
+# 탭 4: 키워드 데이터 조회 탭
+with tab4:
+    st.subheader("저장된 키워드 데이터 조회")
+    search_id_input_keyword = st.number_input("조회할 검색 ID를 입력하세요 (키워드)", min_value=1, step=1)
