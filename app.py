@@ -503,13 +503,13 @@ def analyze_video_data(client, videos_data, is_shorts=False):
         return f"데이터 분석 중 오류가 발생했습니다: {str(e)}"
 
 # 분석 결과 저장 함수
-def save_video_analysis(search_unique_id, video_id, video_title, is_shorts, analysis_result):
+def save_video_analysis(table_name, search_unique_id, video_id, video_title, is_shorts, analysis_result):
     conn = connect_postgres()
     cur = conn.cursor()
     
-    cur.execute("""
-        INSERT INTO channel_analysis (search_unique_id, video_id, video_title, is_shorts, llm_analysis) VALUES (%s, %s, %s, %s, %s)
-        """, 
+    cur.execute(f"""
+        INSERT INTO {table_name} (search_unique_id, video_id, video_title, is_shorts, llm_analysis) VALUES (%s, %s, %s, %s, %s)
+        """,  # channel_analysis
         (search_unique_id, video_id, video_title, is_shorts, analysis_result)
     )
     
@@ -885,7 +885,7 @@ with tab3:
                                 
                                 # 분석 내용 저장
                                 for _, row in shorts_df.iterrows():
-                                    save_video_analysis(search_id_input, row['video_id'], row['제목'], True, shorts_analysis)
+                                    save_video_analysis('channel_analysis', search_id_input, row['video_id'], row['제목'], True, shorts_analysis)
                                 
                                 st.success("쇼츠 영상 분석 완료 및 저장되었습니다!")
                         
@@ -920,7 +920,7 @@ with tab3:
                                 
                                 # 분석 내용 저장
                                 for _, row in longform_df.iterrows():
-                                    save_video_analysis(search_id_input, row['video_id'], row['제목'], False, longform_analysis)
+                                    save_video_analysis('channel_analysis', search_id_input, row['video_id'], row['제목'], False, longform_analysis)
                                 
                                 st.success("롱폼 영상 분석 완료 및 저장되었습니다!")
                         
@@ -1068,6 +1068,73 @@ with tab4:
                 
                 # 분석 섹션
                 st.subheader("채널 데이터 분석하기")
+                
+                # 1. 쇼츠 분석 섹션
+                st.write("### 쇼츠 영상 분석")
+                
+                if len(shorts_df) == 0:
+                    st.info("해당 채널에는 쇼츠가 없습니다.")
+                else:
+                    # 쇼츠 분석 버튼
+                    if not st.session_state.shorts_analyzed_tab4:
+                        shorts_btn = st.button(
+                            "쇼츠 분석 시작", 
+                            type="primary", 
+                            key="btn_analyze_shorts_tab4",
+                            on_click=on_analyze_shorts_click_tab4
+                        )
+                    
+                    # 분석 수행 및 결과 표시
+                    if st.session_state.shorts_analyzed_tab4:
+                        if st.session_state.shorts_analysis_result_tab4 is None:
+                            with st.spinner("쇼츠 영상 분석 중..."):
+                                # 쇼츠 분석 수행
+                                shorts_analysis = analyze_video_data(openai_client, display_df, is_shorts=True)
+                                st.session_state.shorts_analysis_result_tab4 = shorts_analysis
+                                
+                                # 분석 내용 저장
+                                for _, row in shorts_df.iterrows():
+                                    save_video_analysis('keyword_analysis', search_id_input, row['video_id'], row['제목'], True, shorts_analysis)
+                                
+                                st.success("쇼츠 영상 분석 완료 및 저장되었습니다!")
+                        
+                        # 저장된 분석 결과 표시
+                        st.write(st.session_state.shorts_analysis_result_tab4)
+                
+                # 구분선
+                st.markdown("---")
+                
+                # 2. 롱폼 분석 섹션
+                st.write("### 롱폼 영상 분석")
+                
+                if len(longform_df) == 0:
+                    st.info("해당 채널에는 롱폼이 없습니다.")
+                else:
+                    # 롱폼 분석 버튼
+                    if not st.session_state.longform_analyzed_tab4:
+                        longform_btn = st.button(
+                            "롱폼 분석 시작", 
+                            type="primary", 
+                            key="btn_analyze_longform_tab4",
+                            on_click=on_analyze_longform_click_tab4
+                        )
+                    
+                    # 분석 수행 및 결과 표시
+                    if st.session_state.longform_analyzed_tab4:
+                        if st.session_state.longform_analysis_result_tab4 is None:
+                            with st.spinner("롱폼 영상 분석 중..."):
+                                # 롱폼 분석 수행
+                                longform_analysis = analyze_video_data(openai_client, display_df, is_shorts=False)
+                                st.session_state.longform_analysis_result_tab4 = longform_analysis
+                                
+                                # 분석 내용 저장
+                                for _, row in longform_df.iterrows():
+                                    save_video_analysis('keyword_analysis', search_id_input, row['video_id'], row['제목'], False, longform_analysis)
+                                
+                                st.success("롱폼 영상 분석 완료 및 저장되었습니다!")
+                        
+                        # 저장된 분석 결과 표시
+                        st.write(st.session_state.longform_analysis_result_tab4)  
         
         except Exception as e:
             st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
