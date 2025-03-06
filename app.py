@@ -515,6 +515,52 @@ def save_video_analysis(search_unique_id, video_id, video_title, is_shorts, anal
     cur.close()
     conn.close()
 
+# 각 search_unique_id별로 가장 높은 비율의 동영상 하나씩 가져오는 함수
+def get_top_videos_by_search_id(table_name):
+    conn = connect_postgres()
+    cur = conn.cursor()
+
+    # 모든 고유 search_unique_id 가져오기
+    cur.execute("SELECT DISTINCT search_unique_id FROM channel_info ORDER BY search_unique_id DESC")
+    search_ids = [row[0] for row in cur.fetchall()]
+    
+    # 결과 데이터를 저장할 리스트
+    results = []
+    
+    # 각 search_unique_id에 대해 가장 높은 video_view_subscriber_ratio를 가진 동영상 가져오기
+    for search_id in search_ids:
+        cur.execute(f"""
+        SELECT 
+            search_unique_id, keyword, channel_name, video_id, video_title, video_thumbnail, 
+            video_view_count, video_like_count, video_comment_count, video_view_subscriber_ratio, 
+            is_shorts, comment_1, comment_2, comment_3, transcript
+        FROM 
+            {table_name} 
+        WHERE 
+            search_unique_id = %s
+        ORDER BY 
+            video_view_subscriber_ratio DESC
+        LIMIT 1
+        """, (search_id,))
+        
+        row = cur.fetchone()
+        if row:
+            results.append(row)
+    
+    # 컬럼 이름
+    columns = [
+        'pk_ID', '키워드', '채널명', 'video_id', '제목', '썸네일', 
+        '조회수', '좋아요', '댓글수', '조회수/구독자 비율', 
+        '쇼츠', '댓글1', '댓글2', '댓글3', '스크립트'
+    ]
+    
+    df = pd.DataFrame(results, columns=columns)
+    
+    cur.close()
+    conn.close()
+    
+    return df
+
 
 st.title("유튜브 채널 분석기")
 tab1, tab2, tab3, tab4 = st.tabs(["채널 데이터 수집", "키워드 기반 데이터 수집", "채널 데이터 조회", "키워드 데이터 조회"])
@@ -659,7 +705,6 @@ with tab2:
 # 탭 3: 채널 데이터 조회 탭
 with tab3:
     st.subheader("저장된 채널 데이터 조회")
-    search_id_input = st.number_input("조회할 검색 ID를 입력하세요", min_value=1, step=1)
     
     # 세션 상태 초기화
     if 'search_clicked' not in st.session_state:
@@ -674,6 +719,48 @@ with tab3:
         st.session_state.longform_analysis_result = None
     if 'found_data' not in st.session_state:
         st.session_state.found_data = None
+    
+    # 먼저 모든 채널별 최고 성과 동영상 표시
+    st.subheader("검색ID별 최고 성과 동영상 목록")
+    
+    try:
+        top_videos_df = get_top_videos_by_search_id('channel_info')
+        
+        if not top_videos_df.empty:
+            # 데이터 표시
+            st.dataframe(
+                top_videos_df,
+                column_config={
+                    "썸네일": st.column_config.ImageColumn(width="large", help="영상 썸네일"),
+                    "검색ID": st.column_config.Column(width="small", help="이 ID를 아래 입력란에 입력하여 상세 분석"),
+                    "키워드": st.column_config.Column(width="medium"),
+                    "채널명": st.column_config.Column(width="medium"), 
+                    "제목": st.column_config.Column(width="large"),
+                    "조회수": st.column_config.Column(width="small"),
+                    "좋아요": st.column_config.Column(width="small"),
+                    "댓글수": st.column_config.Column(width="small"),
+                    "조회수/구독자 비율": st.column_config.Column(width="small"),
+                    "쇼츠": st.column_config.Column(width="small")
+                },
+                hide_index=True,
+                use_container_width=True,
+                height=300
+            )
+            
+            # ID 선택에 도움이 되는 정보 추가
+            st.info("👆 위 목록에서 상세 분석하고 싶은 검색ID를 확인하고, 아래에 입력하세요.")
+        else:
+            st.warning("저장된 채널 데이터가 없습니다.")
+    except Exception as e:
+        st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
+    
+    # 구분선 추가
+    st.markdown("---")
+    
+    # 특정 채널 상세 분석 섹션
+    st.subheader("특정 검색ID 상세 분석")
+    
+    search_id_input = st.number_input("조회할 검색 ID를 입력하세요", min_value=1, step=1)
     
     # 검색 버튼 콜백
     def on_search_click():
@@ -828,4 +915,3 @@ with tab3:
 # 탭 4: 키워드 데이터 조회 탭
 with tab4:
     st.subheader("저장된 키워드 데이터 조회")
-    search_id_input_keyword = st.number_input("조회할 검색 ID를 입력하세요 (키워드)", min_value=1, step=1)
