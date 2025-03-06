@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 import requests
 import time
 import pandas as pd
-from bs4 import BeautifulSoup
 
 from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -1077,10 +1076,44 @@ with tab4:
 # 탭 5: 블로그 분석기 탭
 with tab5:
     st.subheader("블로그 분석기")
-    
+
     analysis_keyword = st.text_input('블로그 분석을 위한 키워드를 입력하세요. 분석 그룹의 이름을 결정합니다.')
     
-    # 블로그 여러개 분석
+    # # 블로그 한개 분석
+    # blog_url = st.text_input('분석할 블로그 주소를 입력하세요.')  # 나중에 10개로 늘릴 예정
+    # analyse_button = st.button("블로그 분석 시작", type="primary")
+    
+    # if blog_url and analysis_keyword and analyse_button:
+    #     with st.spinner("블로그 내용을 분석 중입니다..."):
+    #         try:
+    #             extracted_data = blog_content(blog_url)
+
+    #             blog_summary = blog_summarizer(openai_client, extracted_data['content'])
+
+    #             conn = connect_postgres()
+    #             cur = conn.cursor()
+
+    #             # RETURNING 절 추가
+    #             cur.execute("""
+    #             INSERT INTO blog_summary (keyword, url, summary) 
+    #             VALUES (%s, %s, %s) RETURNING id
+    #             """, (analysis_keyword, blog_url, blog_summary))
+                
+    #             # 반환된 id 가져오기
+    #             inserted_id = cur.fetchone()[0]
+
+    #             conn.commit()
+    #             cur.close()
+    #             conn.close()
+
+    #             st.subheader("블로그 요약 결과")
+    #             st.write(blog_summary)
+                
+    #             st.success(f"블로그 분석 결과가 성공적으로 저장되었습니다! (ID: {inserted_id})")
+    #         except Exception as e:
+    #             st.error(f"블로그 분석 중 오류가 발생했습니다: {str(e)}")
+    
+    # # 블로그 여러개 분석
     blog_urls_container = st.container()  # 컨테이너 생성
     
     # 세션 상태에 URL 리스트 초기화
@@ -1203,4 +1236,93 @@ with tab5:
                 for url, error in failed_urls:
                     with st.expander(f"실패한 URL: {url}"):
                         st.error(f"오류: {error}")
-            
+   
+# 탭 6: 블로그 통합 분석 탭
+with tab6:
+    st.subheader("블로그 통합 분석")
+
+    load_keyword = st.text_input('키워드를 입력하세요. 해당 키워드로 그루핑된 블로그 내용들을 통합 분석합니다.')
+    int_analyse_button = st.button("통합 분석 시작", type="primary")  # integrated analysis
+    
+    if load_keyword and int_analyse_button:
+        with st.spinner(f"키워드 '{load_keyword}'로 저장된 블로그 요약을 통합 분석 중..."):
+            try:
+                # 데이터베이스에서 해당 키워드로 저장된 요약 조회
+                conn = connect_postgres()
+                cur = conn.cursor()
+                
+                cur.execute("""
+                SELECT summary FROM blog_summary 
+                WHERE keyword = %s
+                """, (load_keyword,))
+                
+                summaries = [row[0] for row in cur.fetchall()]
+                
+                # 조회된 요약이 없는 경우
+                if not summaries:
+                    st.error(f"키워드 '{load_keyword}'로 저장된 블로그 요약이 없습니다.")
+                else:
+                    # 통합 분석을 위한 프롬프트 작성
+                    prompt = f"""
+다음은 "{load_keyword}" 키워드와 관련된 {len(summaries)}개의 블로그 포스트 요약입니다:
+
+"""
+                    for i, summary in enumerate(summaries):
+                        prompt += f"\n--- 블로그 {i+1} ---\n{summary}\n"
+                    
+                    prompt += f"""
+위의 블로그 요약들을 통합적으로 분석하여, 다음 사항을 포함한 포괄적인 요약을 작성해주세요:
+
+1. 주요 내용 및 공통 주제
+2. 중요한 사실이나 정보
+3. 서로 다른 관점이나 의견 (있는 경우)
+4. 관련 이벤트나 일정 (있는 경우)
+5. 전체 내용을 종합한 통찰
+
+"{load_keyword}" 키워드를 중심으로 이 모든 블로그 내용을 잘 통합해서 요약해주세요.
+"""
+                    
+                    # OpenAI API를 통한 통합 분석
+                    response = openai_client.chat.completions.create(
+                        model="gpt-4o-2024-08-06",
+                        messages=[
+                            {"role": "system", "content": "당신은 여러 블로그 포스트의 요약을 통합하여 분석하는 전문가입니다."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.3,
+                        max_tokens=1500
+                    )
+                    
+                    integrated_summary = response.choices[0].message.content.strip()
+                    
+                    # 고유 ID 생성
+                    search_id = search_unique_id()
+                    
+                    # 통합 분석 결과 저장
+                    cur.execute("""
+                    INSERT INTO blog_int_summary (search_unique_id, keyword, int_summary)
+                    VALUES (%s, %s, %s)
+                    """, (search_id, load_keyword, integrated_summary))
+                    
+                    conn.commit()
+                    
+                    # 성공 메시지 표시
+                    st.success(f"{len(summaries)}개의 블로그 요약이 성공적으로 통합 분석되었습니다.")
+                    
+                    # 결과 표시
+                    st.subheader("통합 분석 결과")
+                    st.write(integrated_summary)
+                
+                cur.close()
+                conn.close()
+                
+            except Exception as e:
+                st.error(f"통합 분석 중 오류가 발생했습니다: {str(e)}")
+                # 에러 발생 시 연결 닫기
+                try:
+                    if 'conn' in locals() and conn:
+                        conn.rollback()
+                        cur.close()
+                        conn.close()
+                except:
+                    pass
