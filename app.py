@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import requests
 import time
 import pandas as pd
+from bs4 import BeautifulSoup
 
 from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -12,6 +13,8 @@ from openai import OpenAI
 
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+
+from extract_blog_content import blog_content
 
 
 st.set_page_config(page_title="유튜브 채널 분석기", layout="wide")
@@ -561,9 +564,30 @@ def get_top_videos_by_search_id(table_name):
     
     return df
 
+def blog_summarizer(client, text):
+    try:
+        # 입력 텍스트가 너무 길 경우 제한 (API 제한을 고려)
+        if len(text) > 15000:
+            text = text[:15000] + "..."
+    
+        summary = client.chat.completions.create(
+            model='gpt-4o-2024-08-06', 
+            messages=[
+                {"role": "system", "content": "다음 블로그 포스트를 명확하고 간결하게 요약해주세요. 핵심 내용과 주요 포인트를 포함시켜야 합니다."},
+                {"role": "user", "content": text}
+            ],
+            temperature=0.3, 
+            max_tokens=500,
+        )
+        
+        return summary.choices[0].message.content.strip()
+    
+    except Exception as e:
+        return {"블로그 내용 요약 중 오류가 발생했습니다.": str(e)}
+
 
 st.title("유튜브 채널 분석기")
-tab1, tab2, tab3, tab4 = st.tabs(["채널 데이터 수집", "키워드 기반 데이터 수집", "채널 데이터 조회", "키워드 데이터 조회"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["채널 데이터 수집", "키워드 기반 데이터 수집", "채널 데이터 조회", "키워드 데이터 조회", "블로그 분석기"])
 
 # 탭 1: 채널 데이터 수집 탭
 with tab1:
@@ -1049,3 +1073,43 @@ with tab4:
         except Exception as e:
             st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
             st.session_state.found_data_tab4 = None
+
+# 탭 5: 블로그 분석기 탭
+with tab5:
+    st.subheader("블로그 분석기")
+
+    analysis_keyword = st.text_input('블로그 분석을 위한 키워드를 입력하세요. 분석 그룹의 이름을 결정합니다.')
+    blog_url = st.text_input('분석할 블로그 주소를 입력하세요.')  # 나중에 10개로 늘릴 예정
+    analyse_button = st.button("블로그 분석 시작", type="primary")
+    
+    if blog_url and analysis_keyword and analyse_button:
+        with st.spinner("블로그 내용을 분석 중입니다..."):
+            try:
+                extracted_data = blog_content(blog_url)
+
+                blog_summary = blog_summarizer(openai_client, extracted_data['content'])
+                # print(blog_summary)
+
+                conn = connect_postgres()
+                cur = conn.cursor()
+
+                # RETURNING 절 추가
+                cur.execute("""
+                INSERT INTO blog_summary (keyword, url, summary) 
+                VALUES (%s, %s, %s) RETURNING id
+                """, (analysis_keyword, blog_url, blog_summary))
+                
+                # 반환된 id 가져오기
+                inserted_id = cur.fetchone()[0]
+
+                conn.commit()
+                cur.close()
+                conn.close()
+
+                st.subheader("블로그 요약 결과")
+                st.write(blog_summary)
+                
+                st.success(f"블로그 분석 결과가 성공적으로 저장되었습니다! (ID: {inserted_id})")
+            except Exception as e:
+                st.error(f"블로그 분석 중 오류가 발생했습니다: {str(e)}")
+            
