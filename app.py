@@ -1077,44 +1077,10 @@ with tab4:
 # 탭 5: 블로그 분석기 탭
 with tab5:
     st.subheader("블로그 분석기")
-
+    
     analysis_keyword = st.text_input('블로그 분석을 위한 키워드를 입력하세요. 분석 그룹의 이름을 결정합니다.')
     
-    # # 블로그 한개 분석
-    # blog_url = st.text_input('분석할 블로그 주소를 입력하세요.')  # 나중에 10개로 늘릴 예정
-    # analyse_button = st.button("블로그 분석 시작", type="primary")
-    
-    # if blog_url and analysis_keyword and analyse_button:
-    #     with st.spinner("블로그 내용을 분석 중입니다..."):
-    #         try:
-    #             extracted_data = blog_content(blog_url)
-
-    #             blog_summary = blog_summarizer(openai_client, extracted_data['content'])
-
-    #             conn = connect_postgres()
-    #             cur = conn.cursor()
-
-    #             # RETURNING 절 추가
-    #             cur.execute("""
-    #             INSERT INTO blog_summary (keyword, url, summary) 
-    #             VALUES (%s, %s, %s) RETURNING id
-    #             """, (analysis_keyword, blog_url, blog_summary))
-                
-    #             # 반환된 id 가져오기
-    #             inserted_id = cur.fetchone()[0]
-
-    #             conn.commit()
-    #             cur.close()
-    #             conn.close()
-
-    #             st.subheader("블로그 요약 결과")
-    #             st.write(blog_summary)
-                
-    #             st.success(f"블로그 분석 결과가 성공적으로 저장되었습니다! (ID: {inserted_id})")
-    #         except Exception as e:
-    #             st.error(f"블로그 분석 중 오류가 발생했습니다: {str(e)}")
-    
-    # # 블로그 여러개 분석
+    # 블로그 여러개 분석
     blog_urls_container = st.container()  # 컨테이너 생성
     
     # 세션 상태에 URL 리스트 초기화
