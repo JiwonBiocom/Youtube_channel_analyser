@@ -311,15 +311,15 @@ class YouTubeAnalyzer:
 
 
 # 채널 정보 불러오기
-def get_channel_info(search_id):
+def get_info(search_id, table_name):  # channel_info
     conn = connect_postgres()
     cur = conn.cursor()
 
-    cur.execute("""
+    cur.execute(f"""
     SELECT 
         channel_name, video_id, video_title, video_thumbnail, video_view_count, video_like_count, video_comment_count, video_view_subscriber_ratio, is_shorts, comment_1, comment_2, comment_3, transcript
     FROM 
-        channel_info 
+        {table_name} 
     WHERE 
         search_unique_id = %s
     """, (search_id,))
@@ -707,18 +707,18 @@ with tab3:
     st.subheader("저장된 채널 데이터 조회")
     
     # 세션 상태 초기화
-    if 'search_clicked' not in st.session_state:
-        st.session_state.search_clicked = False
-    if 'shorts_analyzed' not in st.session_state:  # 쇼츠 분석 완료 여부
-        st.session_state.shorts_analyzed = False
-    if 'longform_analyzed' not in st.session_state:  # 롱폼 분석 완료 여부
-        st.session_state.longform_analyzed = False
-    if 'shorts_analysis_result' not in st.session_state:  # 쇼츠 분석 결과
-        st.session_state.shorts_analysis_result = None
-    if 'longform_analysis_result' not in st.session_state:  # 롱폼 분석 결과
-        st.session_state.longform_analysis_result = None
-    if 'found_data' not in st.session_state:
-        st.session_state.found_data = None
+    if 'search_clicked_tab3' not in st.session_state:
+        st.session_state.search_clicked_tab3 = False
+    if 'shorts_analyzed_tab3' not in st.session_state:
+        st.session_state.shorts_analyzed_tab3 = False
+    if 'longform_analyzed_tab3' not in st.session_state:
+        st.session_state.longform_analyzed_tab3 = False
+    if 'shorts_analysis_result_tab3' not in st.session_state:
+        st.session_state.shorts_analysis_result_tab3 = None
+    if 'longform_analysis_result_tab3' not in st.session_state:
+        st.session_state.longform_analysis_result_tab3 = None
+    if 'found_data_tab3' not in st.session_state:
+        st.session_state.found_data_tab3 = None
     
     # 먼저 모든 채널별 최고 성과 동영상 표시
     st.subheader("검색ID별 최고 성과 동영상 목록")
@@ -759,35 +759,35 @@ with tab3:
     
     # 특정 채널 상세 분석 섹션
     st.subheader("특정 검색ID 상세 분석")
-    search_id_input = st.number_input("조회할 검색 ID를 입력하세요", min_value=1, step=1)
+    search_id_input = st.number_input("분석할 검색 ID를 입력하세요", min_value=1, step=1)
     
     # 검색 버튼 콜백
-    def on_search_click():
-        st.session_state.search_clicked = True
-        st.session_state.shorts_analyzed = False
-        st.session_state.longform_analyzed = False
-        st.session_state.shorts_analysis_result = None
-        st.session_state.longform_analysis_result = None
-        st.session_state.found_data = None  # 새 검색 시 데이터 초기화
+    def on_search_click_tab3():
+        st.session_state.search_clicked_tab3 = True
+        st.session_state.shorts_analyzed_tab3 = False
+        st.session_state.longform_analyzed_tab3 = False
+        st.session_state.shorts_analysis_result_tab3 = None
+        st.session_state.longform_analysis_result_tab3 = None
+        st.session_state.found_data_tab3 = None  # 새 검색 시 데이터 초기화
         
     # 쇼츠 분석 버튼 콜백
-    def on_analyze_shorts_click():
-        st.session_state.shorts_analyzed = True
+    def on_analyze_shorts_click_tab3():
+        st.session_state.longform_analyzed_tab3 = True
     
     # 롱폼 분석 버튼 콜백
-    def on_analyze_longform_click():
-        st.session_state.longform_analyzed = True
+    def on_analyze_longform_click_tab3():
+        st.session_state.longform_analyzed_tab3 = True
     
-    search_button = st.button("검색", type="primary", key="search_button", on_click=on_search_click)
+    search_button = st.button("검색", type="primary", key="search_button_tab3", on_click=on_search_click_tab3)
     
     # 검색 결과 표시
-    if st.session_state.search_clicked:
+    if st.session_state.search_clicked_tab3:
         try:
-            if 'found_data' not in st.session_state or st.session_state.found_data is None:
-                display_df = get_channel_info(search_id_input)
-                st.session_state.found_data = display_df
+            if 'found_data_tab3' not in st.session_state or st.session_state.found_data_tab3 is None:
+                display_df = get_info(search_id_input, 'channel_info')
+                st.session_state.found_data_tab3 = display_df
             else:
-                display_df = st.session_state.found_data
+                display_df = st.session_state.found_data_tab3
             
             if not display_df.empty:
                 st.success(f"검색 ID {search_id_input}에 해당하는 데이터를 찾았습니다.")
@@ -813,7 +813,6 @@ with tab3:
                 
                 # 전체 데이터 표시
                 st.subheader("모든 영상 데이터")
-                # st.dataframe(display_df, use_container_width=True)
                 st.dataframe(
                     display_df,
                     column_config={
@@ -822,7 +821,7 @@ with tab3:
                         "제목": st.column_config.Column(width="large"),
                         "조회수": st.column_config.Column(width="small"),
                         "좋아요": st.column_config.Column(width="small"),
-                        "댓글 수": st.column_config.Column(width="small"),
+                        "댓글수": st.column_config.Column(width="small"),
                         "조회수/구독자 비율": st.column_config.Column(width="small"),
                         "쇼츠": st.column_config.Column(width="small"), 
                         "댓글1": st.column_config.Column(width="large"), 
@@ -845,21 +844,21 @@ with tab3:
                     st.info("해당 채널에는 쇼츠가 없습니다.")
                 else:
                     # 쇼츠 분석 버튼
-                    if not st.session_state.shorts_analyzed:
+                    if not st.session_state.shorts_analyzed_tab3:
                         shorts_btn = st.button(
                             "쇼츠 분석 시작", 
                             type="primary", 
                             key="btn_analyze_shorts",
-                            on_click=on_analyze_shorts_click
+                            on_click=on_analyze_shorts_click_tab3
                         )
                     
                     # 분석 수행 및 결과 표시
-                    if st.session_state.shorts_analyzed:
-                        if st.session_state.shorts_analysis_result is None:
+                    if st.session_state.shorts_analyzed_tab3:
+                        if st.session_state.shorts_analysis_result_tab3 is None:
                             with st.spinner("쇼츠 영상 분석 중..."):
                                 # 쇼츠 분석 수행
                                 shorts_analysis = analyze_video_data(openai_client, display_df, is_shorts=True)
-                                st.session_state.shorts_analysis_result = shorts_analysis
+                                st.session_state.shorts_analysis_result_tab3 = shorts_analysis
                                 
                                 # 분석 내용 저장
                                 for _, row in shorts_df.iterrows():
@@ -868,7 +867,7 @@ with tab3:
                                 st.success("쇼츠 영상 분석 완료 및 저장되었습니다!")
                         
                         # 저장된 분석 결과 표시
-                        st.write(st.session_state.shorts_analysis_result)
+                        st.write(st.session_state.shorts_analysis_result_tab3)
                 
                 # 구분선
                 st.markdown("---")
@@ -880,21 +879,21 @@ with tab3:
                     st.info("해당 채널에는 롱폼이 없습니다.")
                 else:
                     # 롱폼 분석 버튼
-                    if not st.session_state.longform_analyzed:
+                    if not st.session_state.longform_analyzed_tab3:
                         longform_btn = st.button(
                             "롱폼 분석 시작", 
                             type="primary", 
                             key="btn_analyze_longform",
-                            on_click=on_analyze_longform_click
+                            on_click=on_analyze_longform_click_tab3
                         )
                     
                     # 분석 수행 및 결과 표시
-                    if st.session_state.longform_analyzed:
-                        if st.session_state.longform_analysis_result is None:
+                    if st.session_state.longform_analyzed_tab3:
+                        if st.session_state.longform_analysis_result_tab3 is None:
                             with st.spinner("롱폼 영상 분석 중..."):
                                 # 롱폼 분석 수행
                                 longform_analysis = analyze_video_data(openai_client, display_df, is_shorts=False)
-                                st.session_state.longform_analysis_result = longform_analysis
+                                st.session_state.longform_analysis_result_tab3 = longform_analysis
                                 
                                 # 분석 내용 저장
                                 for _, row in longform_df.iterrows():
@@ -903,17 +902,31 @@ with tab3:
                                 st.success("롱폼 영상 분석 완료 및 저장되었습니다!")
                         
                         # 저장된 분석 결과 표시
-                        st.write(st.session_state.longform_analysis_result)   
+                        st.write(st.session_state.longform_analysis_result_tab3)   
             else:
                 st.warning(f"검색 ID {search_id_input}에 해당하는 데이터가 없습니다.")
-                st.session_state.found_data = None
+                st.session_state.found_data_tab3 = None
         except Exception as e:
             st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
-            st.session_state.found_data = None
+            st.session_state.found_data_tab3 = None
 
 # 탭 4: 키워드 데이터 조회 탭
 with tab4:
     st.subheader("저장된 키워드 데이터 조회")
+    
+    # 세션 상태 초기화
+    if 'search_clicked_tab4' not in st.session_state:
+        st.session_state.search_clicked_tab4 = False
+    if 'shorts_analyzed_tab4' not in st.session_state:  # 쇼츠 분석 완료 여부
+        st.session_state.shorts_analyzed_tab4 = False
+    if 'longform_analyzed_tab4' not in st.session_state:  # 롱폼 분석 완료 여부
+        st.session_state.longform_analyzed_tab4 = False
+    if 'shorts_analysis_result_tab4' not in st.session_state:  # 쇼츠 분석 결과
+        st.session_state.shorts_analysis_result_tab4 = None
+    if 'longform_analysis_result_tab4' not in st.session_state:  # 롱폼 분석 결과
+        st.session_state.longform_analysis_result_tab4 = None
+    if 'found_data_tab4' not in st.session_state:
+        st.session_state.found_data_tab4 = None
     
     # 먼저 모든 채널별 최고 성과 동영상 표시
     st.subheader("검색ID별 최고 성과 동영상 목록")
@@ -956,47 +969,33 @@ with tab4:
     st.subheader("특정 검색ID 상세 분석")
     search_id_input = st.number_input("키워드에 대해 조회할 검색 ID를 입력하세요", min_value=1, step=1)
     
-    # 세션 상태 초기화
-    if 'search_clicked' not in st.session_state:
-        st.session_state.search_clicked = False
-    if 'shorts_analyzed' not in st.session_state:  # 쇼츠 분석 완료 여부
-        st.session_state.shorts_analyzed = False
-    if 'longform_analyzed' not in st.session_state:  # 롱폼 분석 완료 여부
-        st.session_state.longform_analyzed = False
-    if 'shorts_analysis_result' not in st.session_state:  # 쇼츠 분석 결과
-        st.session_state.shorts_analysis_result = None
-    if 'longform_analysis_result' not in st.session_state:  # 롱폼 분석 결과
-        st.session_state.longform_analysis_result = None
-    if 'found_data' not in st.session_state:
-        st.session_state.found_data = None
-    
     # 검색 버튼 콜백
-    def on_search_click():
-        st.session_state.search_clicked = True
-        st.session_state.shorts_analyzed = False
-        st.session_state.longform_analyzed = False
-        st.session_state.shorts_analysis_result = None
-        st.session_state.longform_analysis_result = None
-        st.session_state.found_data = None  # 새 검색 시 데이터 초기화
+    def on_search_click_tab4():
+        st.session_state.search_clicked_tab4 = True
+        st.session_state.shorts_analyzed_tab4 = False
+        st.session_state.longform_analyzed_tab4 = False
+        st.session_state.shorts_analysis_result_tab4 = None
+        st.session_state.longform_analysis_result_tab4 = None
+        st.session_state.found_data_tab4 = None  # 새 검색 시 데이터 초기화
         
     # 쇼츠 분석 버튼 콜백
-    def on_analyze_shorts_click():
-        st.session_state.shorts_analyzed = True
+    def on_analyze_shorts_click_tab4():
+        st.session_state.shorts_analyzed_tab4 = True
     
     # 롱폼 분석 버튼 콜백
-    def on_analyze_longform_click():
-        st.session_state.longform_analyzed = True
+    def on_analyze_longform_click_tab4():
+        st.session_state.longform_analyzed_tab4 = True
     
-    search_button_keyword = st.button("검색", type="primary", key="search_button_keyword", on_click=on_search_click)
+    search_button_keyword = st.button("검색", type="primary", key="search_button_keyword_tab4", on_click=on_search_click_tab4)
     
     # 검색 결과 표시
-    if st.session_state.search_clicked:
+    if st.session_state.search_clicked_tab4:
         try:
-            if 'found_data' not in st.session_state or st.session_state.found_data is None:
-                display_df = get_channel_info(search_id_input)
-                st.session_state.found_data = display_df
+            if 'found_data_tab4' not in st.session_state or st.session_state.found_data_tab4 is None:
+                display_df = get_info(search_id_input, 'keyword_info')
+                st.session_state.found_data_tab4 = display_df
             else:
-                display_df = st.session_state.found_data
+                display_df = st.session_state.found_data_tab4
             
             if not display_df.empty:
                 st.success(f"검색 ID {search_id_input}에 해당하는 데이터를 찾았습니다.")
@@ -1049,4 +1048,4 @@ with tab4:
         
         except Exception as e:
             st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
-            st.session_state.found_data = None
+            st.session_state.found_data_tab4 = None
