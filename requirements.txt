@@ -6,3 +6,4 @@ youtube-transcript-api
 openai
 google-generativeai
 psycopg2-binary
+beautifulsoup4
