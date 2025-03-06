@@ -521,7 +521,7 @@ def get_top_videos_by_search_id(table_name):
     cur = conn.cursor()
 
     # 모든 고유 search_unique_id 가져오기
-    cur.execute("SELECT DISTINCT search_unique_id FROM channel_info ORDER BY search_unique_id DESC")
+    cur.execute(f"SELECT DISTINCT search_unique_id FROM {table_name} ORDER BY search_unique_id DESC")
     search_ids = [row[0] for row in cur.fetchall()]
     
     # 결과 데이터를 저장할 리스트
@@ -759,7 +759,6 @@ with tab3:
     
     # 특정 채널 상세 분석 섹션
     st.subheader("특정 검색ID 상세 분석")
-    
     search_id_input = st.number_input("조회할 검색 ID를 입력하세요", min_value=1, step=1)
     
     # 검색 버튼 콜백
@@ -915,3 +914,139 @@ with tab3:
 # 탭 4: 키워드 데이터 조회 탭
 with tab4:
     st.subheader("저장된 키워드 데이터 조회")
+    
+    # 먼저 모든 채널별 최고 성과 동영상 표시
+    st.subheader("검색ID별 최고 성과 동영상 목록")
+    
+    try:
+        top_videos_df = get_top_videos_by_search_id('keyword_info')
+        
+        if not top_videos_df.empty:
+            # 데이터 표시
+            st.dataframe(
+                top_videos_df,
+                column_config={
+                    "썸네일": st.column_config.ImageColumn(width="large", help="영상 썸네일"),
+                    "검색ID": st.column_config.Column(width="small", help="이 ID를 아래 입력란에 입력하여 상세 분석"),
+                    "키워드": st.column_config.Column(width="medium"),
+                    "채널명": st.column_config.Column(width="medium"), 
+                    "제목": st.column_config.Column(width="large"),
+                    "조회수": st.column_config.Column(width="small"),
+                    "좋아요": st.column_config.Column(width="small"),
+                    "댓글수": st.column_config.Column(width="small"),
+                    "조회수/구독자 비율": st.column_config.Column(width="small"),
+                    "쇼츠": st.column_config.Column(width="small")
+                },
+                hide_index=True,
+                use_container_width=True,
+                height=300
+            )
+            
+            # ID 선택에 도움이 되는 정보 추가
+            st.info("👆 위 목록에서 상세 분석하고 싶은 검색ID를 확인하고, 아래에 입력하세요.")
+        else:
+            st.warning("저장된 채널 데이터가 없습니다.")
+    except Exception as e:
+        st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
+    
+    # 구분선 추가
+    st.markdown("---")
+    
+    # 특정 채널 상세 분석 섹션
+    st.subheader("특정 검색ID 상세 분석")
+    search_id_input = st.number_input("키워드에 대해 조회할 검색 ID를 입력하세요", min_value=1, step=1)
+    
+    # 세션 상태 초기화
+    if 'search_clicked' not in st.session_state:
+        st.session_state.search_clicked = False
+    if 'shorts_analyzed' not in st.session_state:  # 쇼츠 분석 완료 여부
+        st.session_state.shorts_analyzed = False
+    if 'longform_analyzed' not in st.session_state:  # 롱폼 분석 완료 여부
+        st.session_state.longform_analyzed = False
+    if 'shorts_analysis_result' not in st.session_state:  # 쇼츠 분석 결과
+        st.session_state.shorts_analysis_result = None
+    if 'longform_analysis_result' not in st.session_state:  # 롱폼 분석 결과
+        st.session_state.longform_analysis_result = None
+    if 'found_data' not in st.session_state:
+        st.session_state.found_data = None
+    
+    # 검색 버튼 콜백
+    def on_search_click():
+        st.session_state.search_clicked = True
+        st.session_state.shorts_analyzed = False
+        st.session_state.longform_analyzed = False
+        st.session_state.shorts_analysis_result = None
+        st.session_state.longform_analysis_result = None
+        st.session_state.found_data = None  # 새 검색 시 데이터 초기화
+        
+    # 쇼츠 분석 버튼 콜백
+    def on_analyze_shorts_click():
+        st.session_state.shorts_analyzed = True
+    
+    # 롱폼 분석 버튼 콜백
+    def on_analyze_longform_click():
+        st.session_state.longform_analyzed = True
+    
+    search_button_keyword = st.button("검색", type="primary", key="search_button_keyword", on_click=on_search_click)
+    
+    # 검색 결과 표시
+    if st.session_state.search_clicked:
+        try:
+            if 'found_data' not in st.session_state or st.session_state.found_data is None:
+                display_df = get_channel_info(search_id_input)
+                st.session_state.found_data = display_df
+            else:
+                display_df = st.session_state.found_data
+            
+            if not display_df.empty:
+                st.success(f"검색 ID {search_id_input}에 해당하는 데이터를 찾았습니다.")
+                
+                # 쇼츠와 롱폼 영상 분리해서 통계 표시
+                shorts_df = display_df[display_df['쇼츠'] == True]
+                longform_df = display_df[display_df['쇼츠'] == False]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.subheader("쇼츠 영상")
+                    st.write(f"영상 수: {len(shorts_df)}")
+                    if not shorts_df.empty:
+                        st.write(f"평균 조회수: {shorts_df['조회수'].mean():.1f}")
+                        st.write(f"평균 좋아요: {shorts_df['좋아요'].mean():.1f}")
+                
+                with col2:
+                    st.subheader("롱폼 영상")
+                    st.write(f"영상 수: {len(longform_df)}")
+                    if not longform_df.empty:
+                        st.write(f"평균 조회수: {longform_df['조회수'].mean():.1f}")
+                        st.write(f"평균 좋아요: {longform_df['좋아요'].mean():.1f}")
+                
+                # 전체 데이터 표시
+                st.subheader("모든 영상 데이터")
+                # st.dataframe(display_df, use_container_width=True)
+                st.dataframe(
+                    display_df,
+                    column_config={
+                        "썸네일": st.column_config.ImageColumn(width="large", help="영상 썸네일"),
+                        "채널명": st.column_config.Column(width="medium"), 
+                        "제목": st.column_config.Column(width="large"),
+                        "조회수": st.column_config.Column(width="small"),
+                        "좋아요": st.column_config.Column(width="small"),
+                        "댓글 수": st.column_config.Column(width="small"),
+                        "조회수/구독자 비율": st.column_config.Column(width="small"),
+                        "쇼츠": st.column_config.Column(width="small"), 
+                        "댓글1": st.column_config.Column(width="large"), 
+                        "댓글2": st.column_config.Column(width="large"), 
+                        "댓글3": st.column_config.Column(width="large"), 
+                        "스크립트": st.column_config.TextColumn(width="large")
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    height=600
+                )
+                
+                # 분석 섹션
+                st.subheader("채널 데이터 분석하기")
+        
+        except Exception as e:
+            st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
+            st.session_state.found_data = None
