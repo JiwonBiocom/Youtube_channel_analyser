@@ -14,6 +14,7 @@ import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from extract_blog_content import blog_content
+from analyse_video import analyze_channel_video, analyze_keyword_video
 
 
 st.set_page_config(page_title="유튜브 채널 분석기", layout="wide")
@@ -312,7 +313,7 @@ class YouTubeAnalyzer:
             return [{'author': '댓글 없음', 'text': '댓글을 가져올 수 없습니다 (비활성화되었거나 접근 불가)', 'like_count': 0, 'published_at': ''}]
 
 
-# 채널 정보 불러오기
+# 정보 불러오기
 def get_info(search_id, table_name):  # channel_info
     conn = connect_postgres()
     cur = conn.cursor()
@@ -399,118 +400,15 @@ def fetch_youtube_data(search_query, max_results=50):
     
     return pd.DataFrame(videos_data)
 
-# # 채널 동영상 분석 # #
-# 영상 데이터 분석 함수
-def analyze_video_data(client, videos_data, is_shorts=False):
-    """
-    Parameters:
-    client (OpenAI): OpenAI 클라이언트
-    videos_data (DataFrame): 분석할 영상 데이터
-    is_shorts (bool): 쇼츠 영상 분석 여부 (True: 쇼츠, False: 롱폼)
-    
-    Returns:
-    str: 분석 결과
-    """
-    # 해당 카테고리(쇼츠/롱폼)에 맞는 영상 필터링
-    if is_shorts:
-        filtered_data = videos_data[videos_data['쇼츠'] == True]
-        content_type = "쇼츠(Shorts)"
-    else:
-        filtered_data = videos_data[videos_data['쇼츠'] == False]
-        content_type = "롱폼(Longform)"
-    
-    # 데이터가 없는 경우
-    if filtered_data.empty:
-        return f"분석할 {content_type} 영상이 없습니다."
-    
-    # 데이터 준비
-    data_summary = {
-        "영상_수": len(filtered_data),
-        "평균_조회수": filtered_data['조회수'].mean(),
-        "평균_좋아요": filtered_data['좋아요'].mean(),
-        "평균_댓글수": filtered_data['댓글수'].mean(),
-        "평균_조회구독비율": filtered_data['조회수/구독자 비율'].mean(),
-        "최고_조회수": filtered_data['조회수'].max(),
-        "최고_좋아요": filtered_data['좋아요'].max(),
-        "최고_댓글수": filtered_data['댓글수'].max()
-    }
-    
-    # 상위 3개 영상 정보 (조회수 기준)
-    top_videos = filtered_data.sort_values(by='조회수', ascending=False).head(3)
-    top_videos_info = []
-    
-    for _, row in top_videos.iterrows():
-        video_info = {
-            "제목": row['제목'],
-            "조회수": row['조회수'],
-            "좋아요": row['좋아요'],
-            "댓글수": row['댓글수'],
-            "조회구독비율": row['조회수/구독자 비율']
-        }
-        top_videos_info.append(video_info)
-    
-    # 프롬프트 작성
-    channel_name = filtered_data['채널명'].iloc[0]
-    
-    prompt = f"""
-    다음은 YouTube 채널 "{channel_name}"의 {content_type} 영상 {len(filtered_data)}개에 대한 데이터입니다:
-    
-    전체 데이터 요약:
-    - 영상 수: {data_summary['영상_수']}개
-    - 평균 조회수: {data_summary['평균_조회수']:.1f}회
-    - 평균 좋아요: {data_summary['평균_좋아요']:.1f}개
-    - 평균 댓글 수: {data_summary['평균_댓글수']:.1f}개
-    - 평균 조회수/구독자 비율: {data_summary['평균_조회구독비율']:.4f}
-    
-    상위 3개 영상 (조회수 기준):
-    """
-    
-    for i, video in enumerate(top_videos_info):
-        prompt += f"""
-    {i+1}. "{video['제목']}"
-       - 조회수: {video['조회수']}회
-       - 좋아요: {video['좋아요']}개
-       - 댓글 수: {video['댓글수']}개
-       - 조회수/구독자 비율: {video['조회구독비율']:.4f}
-        """
-    
-    prompt += f"""
-    위 데이터를 바탕으로 다음 내용을 분석해주세요:
-    1. 조회수, 좋아요, 댓글 수의 전반적인 트렌드와 상관관계
-    2. 가장 인기 있는 영상들의 공통점 (제목 패턴, 시청자 참여도 등)
-    3. 시청자 참여도가 높은 영상의 특징 (좋아요/조회수 비율, 댓글/조회수 비율 등)
-    4. 조회수/구독자 비율을 통해 본 영상의 인기도 분석
-    5. {content_type} 영상의 성공 요인과 개선점 제안
-    
-    분석 결과는 400-500단어 내외로 작성해주세요.
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-2024-08-06",
-            messages=[
-                {"role": "system", "content": "당신은 유튜브 채널과 영상 데이터를 분석하는 전문가입니다. 데이터를 깊이 있게 분석하고 통찰력 있는 인사이트를 제공해주세요."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=1000
-        )
-        
-        # 응답에서 텍스트 추출
-        return response.choices[0].message.content.strip()
-        
-    except Exception as e:
-        return f"데이터 분석 중 오류가 발생했습니다: {str(e)}"
-
 # 분석 결과 저장 함수
-def save_video_analysis(table_name, search_unique_id, video_id, video_title, is_shorts, analysis_result):
+def save_video_analysis(table_name, search_unique_id, is_shorts, analysis_result):
     conn = connect_postgres()
     cur = conn.cursor()
     
     cur.execute(f"""
-        INSERT INTO {table_name} (search_unique_id, video_id, video_title, is_shorts, llm_analysis) VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO {table_name} (search_unique_id, is_shorts, llm_analysis) VALUES (%s, %s, %s)
         """,  # channel_analysis
-        (search_unique_id, video_id, video_title, is_shorts, analysis_result)
+        (search_unique_id, is_shorts, analysis_result)
     )
     
     conn.commit()
@@ -795,7 +693,7 @@ with tab3:
         
     # 쇼츠 분석 버튼 콜백
     def on_analyze_shorts_click_tab3():
-        st.session_state.longform_analyzed_tab3 = True
+        st.session_state.shorts_analyzed_tab3 = True
     
     # 롱폼 분석 버튼 콜백
     def on_analyze_longform_click_tab3():
@@ -880,12 +778,11 @@ with tab3:
                         if st.session_state.shorts_analysis_result_tab3 is None:
                             with st.spinner("쇼츠 영상 분석 중..."):
                                 # 쇼츠 분석 수행
-                                shorts_analysis = analyze_video_data(openai_client, display_df, is_shorts=True)
+                                shorts_analysis = analyze_channel_video(openai_client, display_df, is_shorts=True)
                                 st.session_state.shorts_analysis_result_tab3 = shorts_analysis
                                 
                                 # 분석 내용 저장
-                                for _, row in shorts_df.iterrows():
-                                    save_video_analysis('channel_analysis', search_id_input, row['video_id'], row['제목'], True, shorts_analysis)
+                                save_video_analysis('channel_analysis', search_id_input, True, shorts_analysis)
                                 
                                 st.success("쇼츠 영상 분석 완료 및 저장되었습니다!")
                         
@@ -915,12 +812,11 @@ with tab3:
                         if st.session_state.longform_analysis_result_tab3 is None:
                             with st.spinner("롱폼 영상 분석 중..."):
                                 # 롱폼 분석 수행
-                                longform_analysis = analyze_video_data(openai_client, display_df, is_shorts=False)
+                                longform_analysis = analyze_channel_video(openai_client, display_df, is_shorts=False)
                                 st.session_state.longform_analysis_result_tab3 = longform_analysis
                                 
                                 # 분석 내용 저장
-                                for _, row in longform_df.iterrows():
-                                    save_video_analysis('channel_analysis', search_id_input, row['video_id'], row['제목'], False, longform_analysis)
+                                save_video_analysis('channel_analysis', search_id_input, False, longform_analysis)
                                 
                                 st.success("롱폼 영상 분석 완료 및 저장되었습니다!")
                         
@@ -1089,12 +985,11 @@ with tab4:
                         if st.session_state.shorts_analysis_result_tab4 is None:
                             with st.spinner("쇼츠 영상 분석 중..."):
                                 # 쇼츠 분석 수행
-                                shorts_analysis = analyze_video_data(openai_client, display_df, is_shorts=True)
+                                shorts_analysis = analyze_keyword_video(openai_client, display_df, is_shorts=True)
                                 st.session_state.shorts_analysis_result_tab4 = shorts_analysis
                                 
                                 # 분석 내용 저장
-                                for _, row in shorts_df.iterrows():
-                                    save_video_analysis('keyword_analysis', search_id_input, row['video_id'], row['제목'], True, shorts_analysis)
+                                save_video_analysis('keyword_analysis', search_id_input, True, shorts_analysis)
                                 
                                 st.success("쇼츠 영상 분석 완료 및 저장되었습니다!")
                         
@@ -1124,12 +1019,11 @@ with tab4:
                         if st.session_state.longform_analysis_result_tab4 is None:
                             with st.spinner("롱폼 영상 분석 중..."):
                                 # 롱폼 분석 수행
-                                longform_analysis = analyze_video_data(openai_client, display_df, is_shorts=False)
+                                longform_analysis = analyze_keyword_video(openai_client, display_df, is_shorts=False)
                                 st.session_state.longform_analysis_result_tab4 = longform_analysis
                                 
                                 # 분석 내용 저장
-                                for _, row in longform_df.iterrows():
-                                    save_video_analysis('keyword_analysis', search_id_input, row['video_id'], row['제목'], False, longform_analysis)
+                                save_video_analysis('keyword_analysis', search_id_input, False, longform_analysis)
                                 
                                 st.success("롱폼 영상 분석 완료 및 저장되었습니다!")
                         
