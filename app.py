@@ -1475,10 +1475,13 @@ with tab7:
 
 꼭 아래 포맷대로 생성 해주세요:
 [제목]
+제목 3가지
 
 [썸네일]
+썸네일 3가지
 
 [스크립트]
+스크립트 1가지
 
 """
                 content = openai_client.chat.completions.create(
