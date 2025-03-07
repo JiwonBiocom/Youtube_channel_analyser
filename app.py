@@ -314,13 +314,13 @@ class YouTubeAnalyzer:
 
 
 # 정보 불러오기
-def get_info(search_id, table_name):  # channel_info
+def get_info(search_id, table_name):
     conn = connect_postgres()
     cur = conn.cursor()
 
     cur.execute(f"""
     SELECT 
-        channel_name, video_id, video_title, video_thumbnail, video_view_count, video_like_count, video_comment_count, video_view_subscriber_ratio, is_shorts, comment_1, comment_2, comment_3, transcript
+        keyword, channel_name, video_id, video_title, video_thumbnail, video_view_count, video_like_count, video_comment_count, video_view_subscriber_ratio, is_shorts, comment_1, comment_2, comment_3, transcript
     FROM 
         {table_name} 
     WHERE 
@@ -331,7 +331,7 @@ def get_info(search_id, table_name):  # channel_info
 
     # 키워드도 조회해야
     columns = [
-        '채널명', 'video_id', '제목', '썸네일', '조회수', '좋아요', '댓글수', 
+        '키워드', '채널명', 'video_id', '제목', '썸네일', '조회수', '좋아요', '댓글수', 
         '조회수/구독자 비율', '쇼츠', '댓글1', '댓글2', '댓글3', '스크립트'
     ]
     
