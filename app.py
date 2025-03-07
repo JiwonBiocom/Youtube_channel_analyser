@@ -1300,6 +1300,10 @@ with tab6:
 with tab7:
     st.subheader("유튜브 콘텐츠 생성하기")
 
+    # 세션 상태 초기화
+    if 'content_generated' not in st.session_state:
+        st.session_state.content_generated = False
+
     blog_id = st.text_input('주제로 삼을 블로그 요약본의 분석 아이디를 입력하세요.')
     
     try:
@@ -1488,6 +1492,10 @@ with tab7:
                 )
                 
                 result = content.choices[0].message.content.strip()
+                
+                # 세션 상태에 결과 저장 (화면 표시용)
+                st.session_state.generated_content = result
+                st.session_state.content_generated = True
 
                 try:
                     parts = result.split("\n\n")
@@ -1498,16 +1506,13 @@ with tab7:
                         
                     # 각 부분 추출
                     for i, part in enumerate(parts):
-                        if part.startswith("[제목]"):
-                            # 제목 문자열 추출 (첫 줄은 [제목]이므로 제외)
+                        if part.startswith("[제목]"):  # 제목 문자열 추출 (첫 줄은 [제목]이므로 제외)
                             title_lines = part.split("\n")[1:]
                             title = "\n".join(title_lines).strip()
-                        elif part.startswith("[썸네일]"):
-                            # 썸네일 문자열 추출 (첫 줄은 [썸네일]이므로 제외)
+                        elif part.startswith("[썸네일]"):  # 썸네일 문자열 추출 (첫 줄은 [썸네일]이므로 제외)
                             thumbnail_lines = part.split("\n")[1:]
                             thumbnail = "\n".join(thumbnail_lines).strip()
-                        elif part.startswith("[스크립트]"):
-                            # 스크립트 문자열 추출 (첫 줄은 [스크립트]이므로 제외)
+                        elif part.startswith("[스크립트]"):  # 스크립트 문자열 추출 (첫 줄은 [스크립트]이므로 제외)
                             script_lines = part.split("\n")[1:]
                             script = "\n".join(script_lines).strip()
                     
@@ -1525,6 +1530,8 @@ with tab7:
                         conn.commit()
                         cur.close()
                         conn.close()
+                        
+                        st.success("콘텐츠가 성공적으로 생성되고 저장되었습니다!")
 
                     except Exception as e:
                         st.error(f"콘텐츠 저장 중 오류가 발생했습니다: {str(e)}")
@@ -1534,3 +1541,37 @@ with tab7:
             
             except Exception as e:
                 st.error(f"콘텐츠 생성 중 오류가 발생했습니다: {str(e)}")
+    elif button and not blog_id:
+        st.warning("블로그 분석 ID를 입력해주세요.")
+    
+    # 생성된 콘텐츠 표시
+    if st.session_state.get('content_generated', False):
+        st.subheader("생성된 유튜브 콘텐츠")
+        
+        # 제목 섹션
+        st.markdown("### 📌 제목 추천천")
+        if hasattr(st.session_state, 'title'):
+            title_options = st.session_state.title.split("\n")
+            # 각 제목 옵션을 표시
+            for i, title in enumerate(title_options):
+                if title.strip():  # 빈 줄 무시
+                    st.markdown(f"**옵션 {i+1}:** {title.strip()}")
+        
+        # 썸네일 섹션
+        st.markdown("### 🖼️ 썸네일 이미지에 넣을 내용 추천")
+        if hasattr(st.session_state, 'thumbnail'):
+            thumbnail_options = st.session_state.thumbnail.split("\n")
+            # 각 썸네일 옵션을 표시
+            for i, thumbnail in enumerate(thumbnail_options):
+                if thumbnail.strip():  # 빈 줄 무시
+                    st.markdown(f"**옵션 {i+1}:** {thumbnail.strip()}")
+        
+        # 스크립트 섹션
+        st.markdown("### 📝 스크립트")
+        if hasattr(st.session_state, 'script'):
+            st.markdown(st.session_state.script)
+        
+        # 원본 텍스트 (접을 수 있게)
+        with st.expander("원본 생성 텍스트 보기", expanded=False):
+            if hasattr(st.session_state, 'generated_content'):
+                st.text(st.session_state.generated_content)
