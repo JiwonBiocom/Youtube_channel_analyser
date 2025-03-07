@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import requests
 import time
 import pandas as pd
+import datetime
 
 from googleapiclient.discovery import build
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -25,6 +26,8 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
+
+llm_option = st.selectbox("LLM 선택", ('gpt-4o-2024-08-06', 'gpt-4o-mini-2024-07-18', 'gpt-3.5-turbo-0125'))  # 'o1-mini-2024-09-12'
 
 
 # 유튜브 쇼츠인지 아닌지 구분
@@ -149,8 +152,8 @@ def search_unique_id():
 
 # 채널 정보 저장
 def save_info(table_name, search_unique_id, keyword, channel_url, channel_name, channel_subscribers, 
-                      video_id, video_title, video_thumbnail, video_view_count, video_like_count, video_comment_count, video_view_subscriber_ratio, 
-                      is_shorts, transcript, published_at, top_comments):
+              video_id, video_title, video_thumbnail, video_view_count, video_like_count, video_comment_count, video_view_subscriber_ratio, 
+              is_shorts, transcript, published_at, top_comments):
     conn = connect_postgres()
     cur = conn.cursor()
     
@@ -461,14 +464,14 @@ def get_top_videos_by_search_id(table_name):
     
     return df
 
-def blog_summarizer(client, text):
+def blog_summarizer(client, llm, text):
     try:
         # 입력 텍스트가 너무 길 경우 제한 (API 제한을 고려)
         if len(text) > 15000:
             text = text[:15000] + "..."
     
         summary = client.chat.completions.create(
-            model='gpt-4o-2024-08-06', 
+            model=llm,  # 'gpt-4o-2024-08-06'
             messages=[
                 {"role": "system", "content": "다음 블로그 포스트를 명확하고 간결하게 요약해주세요. 핵심 내용과 주요 포인트를 포함시켜야 합니다."},
                 {"role": "user", "content": text}
@@ -484,7 +487,12 @@ def blog_summarizer(client, text):
 
 
 st.title("유튜브 채널 분석기")
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["채널 데이터 수집", "키워드 기반 데이터 수집", "채널 데이터 조회", "키워드 데이터 조회", "블로그 분석기", "블로그 통합 분석"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "채널 데이터 수집", "키워드 기반 데이터 수집", 
+    "채널 데이터 조회", "키워드 데이터 조회", 
+    "블로그 분석기", "블로그 통합 분석", 
+    "유튜브 컨텐츠 만들기"
+])
 
 # 탭 1: 채널 데이터 수집 탭
 with tab1:
@@ -778,7 +786,7 @@ with tab3:
                         if st.session_state.shorts_analysis_result_tab3 is None:
                             with st.spinner("쇼츠 영상 분석 중..."):
                                 # 쇼츠 분석 수행
-                                shorts_analysis = analyze_channel_video(openai_client, display_df, is_shorts=True)
+                                shorts_analysis = analyze_channel_video(openai_client, llm_option, display_df, is_shorts=True)
                                 st.session_state.shorts_analysis_result_tab3 = shorts_analysis
                                 
                                 # 분석 내용 저장
@@ -812,7 +820,7 @@ with tab3:
                         if st.session_state.longform_analysis_result_tab3 is None:
                             with st.spinner("롱폼 영상 분석 중..."):
                                 # 롱폼 분석 수행
-                                longform_analysis = analyze_channel_video(openai_client, display_df, is_shorts=False)
+                                longform_analysis = analyze_channel_video(openai_client, llm_option, display_df, is_shorts=True)
                                 st.session_state.longform_analysis_result_tab3 = longform_analysis
                                 
                                 # 분석 내용 저장
@@ -985,7 +993,7 @@ with tab4:
                         if st.session_state.shorts_analysis_result_tab4 is None:
                             with st.spinner("쇼츠 영상 분석 중..."):
                                 # 쇼츠 분석 수행
-                                shorts_analysis = analyze_keyword_video(openai_client, display_df, is_shorts=True)
+                                shorts_analysis = analyze_keyword_video(openai_client, llm_option, display_df, is_shorts=True)
                                 st.session_state.shorts_analysis_result_tab4 = shorts_analysis
                                 
                                 # 분석 내용 저장
@@ -1019,7 +1027,7 @@ with tab4:
                         if st.session_state.longform_analysis_result_tab4 is None:
                             with st.spinner("롱폼 영상 분석 중..."):
                                 # 롱폼 분석 수행
-                                longform_analysis = analyze_keyword_video(openai_client, display_df, is_shorts=False)
+                                longform_analysis = analyze_keyword_video(openai_client, llm_option, display_df, is_shorts=False)
                                 st.session_state.longform_analysis_result_tab4 = longform_analysis
                                 
                                 # 분석 내용 저장
@@ -1129,7 +1137,7 @@ with tab5:
                 with st.spinner(f"블로그 분석 중... ({i+1}/{len(valid_urls)})"):
                     extracted_data = blog_content(url)  # 블로그 내용 추출
                     
-                    blog_summary = blog_summarizer(openai_client, extracted_data['content'])  # 블로그 요약
+                    blog_summary = blog_summarizer(openai_client, llm_option, extracted_data['content'])  # 블로그 요약
                     
                     # DB에 저장
                     conn = connect_postgres()
@@ -1245,7 +1253,7 @@ with tab6:
                     
                     # OpenAI API를 통한 통합 분석
                     response = openai_client.chat.completions.create(
-                        model="gpt-4o-2024-08-06",
+                        model=llm_option, 
                         messages=[
                             {"role": "system", "content": "당신은 여러 블로그 포스트의 요약을 통합하여 분석하는 전문가입니다."},
                             {"role": "user", "content": prompt}
@@ -1287,3 +1295,242 @@ with tab6:
                         conn.close()
                 except:
                     pass
+        
+# 탭 7: 유튜브 콘텐츠 생성하기 탭
+with tab7:
+    st.subheader("유튜브 콘텐츠 생성하기")
+
+    blog_id = st.text_input('주제로 삼을 블로그 요약본의 분석 아이디를 입력하세요.')
+    
+    try:
+        conn = connect_postgres()
+        cur = conn.cursor()
+        
+        # 모든 통합 블로그 분석 데이터 조회
+        cur.execute("""SELECT search_unique_id, keyword FROM blog_int_summary""")
+        
+        blog_summaries = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        # 데이터 표시
+        if blog_summaries:
+            st.subheader("참고 가능한 블로그 통합 분석 내용")
+            
+            # 데이터프레임으로 변환
+            df = pd.DataFrame(blog_summaries, columns=['분석ID', '키워드'])
+            
+            # 데이터프레임 표시
+            st.dataframe(
+                df,
+                column_config={
+                    "분석ID": st.column_config.Column(width="small"),
+                    "키워드": st.column_config.Column(width="medium"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # 통합 분석 내용 보기 섹션
+            selected_id = st.selectbox(
+                "상세 내용을 확인할 블로그 분석 ID를 선택하세요:",
+                options=[row[0] for row in blog_summaries],
+                format_func=lambda x: f"ID: {x} - 키워드: {df[df['분석ID']==x]['키워드'].values[0]}"
+            )
+            
+            if selected_id:
+                # 선택한 ID의 통합 분석 내용 가져오기
+                conn = connect_postgres()
+                cur = conn.cursor()
+                cur.execute("""SELECT int_summary FROM blog_int_summary WHERE search_unique_id = %s""", (selected_id,))
+                
+                summary_result = cur.fetchone()
+                cur.close()
+                conn.close()
+                
+                if summary_result:
+                    with st.expander("블로그 통합 분석 내용", expanded=True):
+                        st.markdown(summary_result[0])
+        else:
+            st.info("저장된 블로그 통합 분석 내용이 없습니다.")
+    
+    except Exception as e:
+        st.error(f"블로그 통합 분석 데이터 조회 중 오류가 발생했습니다: {str(e)}")
+    
+    # 구분선
+    st.markdown("---")
+    
+    # 콘텐츠 생성 버튼
+    button = st.button("콘텐츠 제작 시작", type="primary")
+    
+    if button and blog_id:
+        with st.spinner('유튜브 콘텐츠를 생성하는 중입니다...'):
+            try:
+                conn = connect_postgres()
+                cur = conn.cursor()
+                cur.execute("""
+                SELECT int_summary, keyword FROM blog_int_summary
+                WHERE search_unique_id = %s
+                """, (blog_id,))
+                
+                result = cur.fetchone()
+                cur.close()
+                conn.close()
+                    
+                if result:
+                    blog_summary = result[0]
+                    keyword = result[1]
+                else:
+                    st.error(f"ID {blog_id}에 해당하는 블로그 분석을 찾을 수 없습니다.")
+                    st.stop()
+
+
+                prompt = f"""
+새로 만들 유튜브 동영상을 위한 제목, 썸네일 이미지 내용, 첫 2분 스크립트 내용을 생성해야 합니다.
+
+제목 및 썸네일 이미지 내용은 다음 카피라이팅 법칙 5가지를 꼭 지켜서 생성해주세요:
+1. NUMBERS (구체적 숫자 / 전후 비교)
+- 원리: 사람들은 구체적 숫자와 명확한 결과(Before→After)에 강하게 이끌립니다.
+- 예시:
+    - “3개월 만에 68→46kg”
+    - “70대 뇌를 20대 뇌로 만들어봤다”
+- 실무 팁:
+    - 효과(결과)나 기간, 전후 비교 등을 반드시 ‘숫자’로 표기하라.
+    - “하루 10분으로 -5kg” 등 짧고 임팩트 있게 강조.
+
+2. ONE & ONLY (하나만 지키면 된다 / 단 하나의 비밀)
+- 원리: “여러 개 중 하나”보다 “오직 이 한 가지”가 훨씬 더 집중도를 높이고 ‘간단히 가능하다’는 희망을 줍니다.
+- 예시:
+    - “날씬한 사람들의 공통점 1가지”
+    - “목숨 걸고 지켜야 하는 단 한 가지”
+- 실무 팁:
+    - 해결책을 한 가지에 압축해 “단 한 가지” “오직 이것” “핵심 1가지” 식으로 포인트를 강조한다.
+    - 너무 많은 팁을 나열하기보다, 핵심 한두 가지만 뽑아주되 ‘마치 전부인 듯’ 어필.
+
+3. SHOCK & HOOK (충격·호기심 + 짧고 강렬한 표현)
+- 원리: “이거 보고도 안 빠지면 찾아오라”처럼 도발적·파격적 문구로 시청자의 시선을 강하게 잡아끕니다.
+- 예시:
+    - “이거 안 바꾸면 평생 답답합니다”
+    - “옷장 ‘이 지경’이면 뭘 해도 성공 못함”
+- 실무 팁:
+    - 경고(공포) + 해결책 조합: “이거 안 하면 망한다 → 하지만 이 방법이 있다”
+    - 자극적 표현을 쓰되, 신뢰를 잃지 않도록 과도한 과장은 피하고, 적절히 호기심을 자극하는 수준으로 조절.
+
+4. AUTHORITY (전문가·유명인 인용, 권위 부여)
+- 원리: “세계 석학” “브루스 립튼 박사” “소유, 엄정화” 등 권위를 빌려서 믿음을 준다.
+- 예시:
+    - “세계 석학들 ‘매일 이 5가지만 지켜도 1.5배 똑똑해집니다’”
+    - “소유, 엄정화가 선택한 저탄고지”
+- 실무 팁:
+    - 통계, 연구 결과, 유명인의 사례를 간결하게 언급해 “이건 검증된 정보”라는 인식을 심어준다.
+    - “미국 하버드대 연구에 따르면…”처럼 간판(권위)을 전면에.
+
+5. URGENCY (시급성·즉시성)
+- 원리: “안 하면 손해 본다” “빨리 해야 결과가 난다”는 메시지가 클릭 및 시청을 부추깁니다.
+- 예시:
+    - “여름 전 ‘이거부터’ 버리세요”
+    - “안 입는 옷 7일 안에 당장 버리세요”
+- 실무 팁:
+    - ‘기간/마감’을 설정하거나, “지금 바로 시작해야 한다”는 뉘앙스를 강조.
+    - “이걸 놓치면 기회가 사라진다”는 심리적 압박을 심어줌.
+
+정리: “숫자(결과) + 하나만 지키면 OK + 충격·호기심(도발) + 권위(전문가·유명인) + 시급성(지금 해야 한다)”
+이 5가지를 적절히 섞어서 영상 제목·썸네일에 배치하면, 높은 클릭률(CTR)을 기대할 수 있습니다.
+
+
+첫 2분 스크립트는 다음 글쓰기 법칙 4가지를 꼭 지켜서 작성해주세요:
+1. SHORT & SIMPLE (짧고 간결하게, 핵심 먼저)
+- 원리: 길고 복잡한 글은 초반 흥미를 떨어뜨립니다. 핵심부터 빠르게 제시해 줘야 합니다.
+- 실무 팁:
+    - 결론 먼저, 부연 설명은 뒤에
+    - 문장을 최대한 짧게 쓴다. (한 문장 20~30자 내외 권장)
+    - 여러 문제를 한 번에 제시하기보다, 가장 중요한 한 가지를 부각하자.
+
+2. HOOK & FLOW (후킹 → 자연스러운 흐름)
+- 원리: 첫 문장에서 독자의 시선을 확 사로잡고, 그 뒤 논리적으로 내용을 전개해야 이탈을 막을 수 있습니다.
+- 실무 팁:
+    - 첫 문장: 충격적 수치/경고/질문 등으로 호기심을 유발.
+    - 이후 내용은 왜 중요한가 → 어떻게 해결되는가 → 결과/사례 → 결론 순으로 흐름 있게 전개.
+
+3. YOU-FOCUSED (독자 중심, 독자의 이익 강조)
+- 원리: “내가 왜 이 정보를 봐야 하지?”라는 독자의 시각으로 작성해야 오래 읽힙니다.
+- 실무 팁
+    - “~하세요” 대신 “~하시면, 당신이 얻게 될 이익”을 구체적으로 제시.
+    - “당신도 2주 만에 -3kg 가능하다면 어떨까요?”처럼 독자가 상상·공감하게 유도한다.
+    - 전문용어 남발 X, 쉬운 용어 + 사례 사용.
+
+4. CREDIBILITY & ACTION (신뢰도 확보 + 행동 유도)
+- 원리: 글이 길어질수록 ‘진짜일까?’라는 의심이 생길 수 있으므로, 신뢰를 쌓고 명확한 다음 행동을 안내해야 합니다.
+- 실무 팁:
+    - 신뢰 확보: 통계, 연구자료, 실제 후기, 전문가 코멘트 등 구체적인 팩트로 뒷받침.
+    - 마무리: “자, 지금부터 7일 동안 옷장 정리를 해보세요”처럼 구체적 행동을 제안. (CTA)
+
+또한 이 블로그 통합 요약 내용도 반영해주세요: {blog_summary}
+
+위 정보들을 토대로 '{keyword}'에 관한 동영상 제목 및 썸네일 이미지 내용 각각 3가지, 스크립트 하나를 생성해주세요.
+
+꼭 아래 포맷대로 생성 해주세요:
+[제목]
+
+[썸네일]
+
+[스크립트]
+
+"""
+                content = openai_client.chat.completions.create(
+                    model=llm_option, 
+                    messages=[
+                        {"role": "system", "content": "당신은 카피라이팅 법칙을 따라 수집된 데이터에 기반하여 유튜브 동영상 컨텐츠를 만드는 전문가입니다."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=1500
+                )
+                
+                result = content.choices[0].message.content.strip()
+
+                try:
+                    parts = result.split("\n\n")
+                    
+                    title = ""
+                    thumbnail = ""
+                    script = ""
+                        
+                    # 각 부분 추출
+                    for i, part in enumerate(parts):
+                        if part.startswith("[제목]"):
+                            # 제목 문자열 추출 (첫 줄은 [제목]이므로 제외)
+                            title_lines = part.split("\n")[1:]
+                            title = "\n".join(title_lines).strip()
+                        elif part.startswith("[썸네일]"):
+                            # 썸네일 문자열 추출 (첫 줄은 [썸네일]이므로 제외)
+                            thumbnail_lines = part.split("\n")[1:]
+                            thumbnail = "\n".join(thumbnail_lines).strip()
+                        elif part.startswith("[스크립트]"):
+                            # 스크립트 문자열 추출 (첫 줄은 [스크립트]이므로 제외)
+                            script_lines = part.split("\n")[1:]
+                            script = "\n".join(script_lines).strip()
+                    
+                    # 생성한 유튜브 컨텐츠 정보를 DB에 저장
+                    try:
+                        conn = connect_postgres()
+                        cur = conn.cursor()
+                            
+                        # 생성된 콘텐츠 저장
+                        cur.execute("""
+                            INSERT INTO youtube_content (id, keyword, title, thumbnail, script)
+                            VALUES (%s, %s, %s, %s, %s)
+                            """, (blog_id if blog_id else selected_id, keyword, title, thumbnail, script))
+                        
+                        conn.commit()
+                        cur.close()
+                        conn.close()
+
+                    except Exception as e:
+                        st.error(f"콘텐츠 저장 중 오류가 발생했습니다: {str(e)}")
+                
+                except Exception as e:
+                    st.error(f"생성된 콘텐츠 파싱 중 오류가 발생했습니다: {str(e)}")
+            
+            except Exception as e:
+                st.error(f"콘텐츠 생성 중 오류가 발생했습니다: {str(e)}")
