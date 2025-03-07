@@ -1523,9 +1523,9 @@ with tab7:
                             
                         # 생성된 콘텐츠 저장
                         cur.execute("""
-                            INSERT INTO youtube_content (id, keyword, title, thumbnail, script)
+                            INSERT INTO youtube_content (blog_id, keyword, title, thumbnail, script)
                             VALUES (%s, %s, %s, %s, %s)
-                            """, (blog_id if blog_id else selected_id, keyword, title, thumbnail, script))
+                            """, (blog_id, keyword, title, thumbnail, script))
                         
                         conn.commit()
                         cur.close()
@@ -1548,30 +1548,7 @@ with tab7:
     if st.session_state.get('content_generated', False):
         st.subheader("생성된 유튜브 콘텐츠")
         
-        # 제목 섹션
-        st.markdown("### 📌 제목 추천천")
-        if hasattr(st.session_state, 'title'):
-            title_options = st.session_state.title.split("\n")
-            # 각 제목 옵션을 표시
-            for i, title in enumerate(title_options):
-                if title.strip():  # 빈 줄 무시
-                    st.markdown(f"**옵션 {i+1}:** {title.strip()}")
-        
-        # 썸네일 섹션
-        st.markdown("### 🖼️ 썸네일 이미지에 넣을 내용 추천")
-        if hasattr(st.session_state, 'thumbnail'):
-            thumbnail_options = st.session_state.thumbnail.split("\n")
-            # 각 썸네일 옵션을 표시
-            for i, thumbnail in enumerate(thumbnail_options):
-                if thumbnail.strip():  # 빈 줄 무시
-                    st.markdown(f"**옵션 {i+1}:** {thumbnail.strip()}")
-        
-        # 스크립트 섹션
-        st.markdown("### 📝 스크립트")
-        if hasattr(st.session_state, 'script'):
-            st.markdown(st.session_state.script)
-        
         # 원본 텍스트 (접을 수 있게)
-        with st.expander("원본 생성 텍스트 보기", expanded=False):
+        with st.expander("원본 생성 텍스트 보기", expanded=True):
             if hasattr(st.session_state, 'generated_content'):
                 st.text(st.session_state.generated_content)
