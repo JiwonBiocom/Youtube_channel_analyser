@@ -1,4 +1,80 @@
-def analyze_channel_video(client, videos_data, is_shorts=False):
+def analyze_thumbnails(client, videos_data, is_shorts=False):
+    if is_shorts:
+        filtered_data = videos_data[videos_data['쇼츠'] == True]
+        content_type = "쇼츠(Shorts)"
+    else:
+        filtered_data = videos_data[videos_data['쇼츠'] == False]
+        content_type = "롱폼(Longform)"
+    
+    # 데이터가 없는 경우
+    if filtered_data.empty:
+        return f"분석할 {content_type} 영상이 없습니다."
+    
+    # 모든 동영상을 조회구독비율 기준으로 정렬
+    sorted_videos = filtered_data.sort_values(by='조회수/구독자 비율', ascending=False)
+    
+    # 결과를 저장할 리스트
+    all_thumbnail_analyses = []
+    
+    # 채널 이름 가져오기
+    channel_name = filtered_data['채널명'].iloc[0]
+    
+    # 각 동영상에 대해 분석 수행
+    for _, video in sorted_videos.iterrows():
+        thumbnail_url = video['썸네일']
+        video_id = video['video_id']
+        
+        prompt = f"""
+        YouTube 채널 "{channel_name}"의 "{video['제목']}" 영상의 썸네일 이미지입니다. 그 외 정보는 다음과 같습니다:
+        조회수: {video['조회수']}
+        좋아요: {video['좋아요']}
+        댓글수: {video['댓글수']}
+        조회구독비율: {video['조회수/구독자 비율']:.4f}
+
+        이 썸네일을 보고 시각적 요소(색상, 구도, 텍스트, 표정 등)가 이 동영상의 인기를 끄는데 기여했을지 200자 이내로 분석해주세요.
+        """
+        
+        try:
+            response = client.chat.completions.create(
+                model='gpt-4o-2024-08-06', 
+                messages=[
+                    {"role": "system", "content": "당신은 유튜브 썸네일 분석 전문가입니다."},
+                    {"role": "user", "content": prompt}, 
+                    {"role": "user", "content": [
+                        {"type": "image_url", "image_url": {"url": thumbnail_url}}
+                    ]}
+                ],
+                temperature=0.3,
+                max_tokens=300
+            )
+            
+            # 분석 결과 저장
+            analysis_result = {
+                "키워드": video['키워드'],
+                "채널명": video['채널명'],
+                "video_id": video_id,
+                "제목": video['제목'],
+                "썸네일": thumbnail_url,
+                "분석": response.choices[0].message.content.strip()
+            }
+            
+            all_thumbnail_analyses.append(analysis_result)
+            
+        except Exception as e:
+            analysis_result = {
+                "키워드": video['키워드'],
+                "채널명": video['채널명'],
+                "video_id": video_id,
+                "제목": video['제목'],
+                "썸네일": thumbnail_url,
+                "분석": f"분석 중 오류 발생: {str(e)}"
+            }
+            all_thumbnail_analyses.append(analysis_result)
+    
+    return all_thumbnail_analyses
+
+
+def analyze_channel_video(client, llm, videos_data, is_shorts=False):  # client, llm, videos_data, thumbnail, is_shorts=False  # 썸네일 분석 추가
     # 해당 카테고리(쇼츠/롱폼)에 맞는 영상 필터링
     if is_shorts:
         filtered_data = videos_data[videos_data['쇼츠'] == True]
@@ -33,7 +109,7 @@ def analyze_channel_video(client, videos_data, is_shorts=False):
             "조회수": row['조회수'],
             "좋아요": row['좋아요'],
             "댓글수": row['댓글수'],
-            "조회구독비율": row['조회수/구독자 비율']
+            "조회구독비율": row['조회수/구독자 비율'], 
         }
         top_videos_info.append(video_info)
     
@@ -75,7 +151,7 @@ def analyze_channel_video(client, videos_data, is_shorts=False):
     
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-2024-08-06",
+            model=llm,  # gpt-4o-2024-08-06
             messages=[
                 {"role": "system", "content": "당신은 유튜브 채널과 영상 데이터를 분석하는 전문가입니다. 데이터를 깊이 있게 분석하고 통찰력 있는 인사이트를 제공해주세요."},
                 {"role": "user", "content": prompt}
@@ -91,7 +167,7 @@ def analyze_channel_video(client, videos_data, is_shorts=False):
         return f"데이터 분석 중 오류가 발생했습니다: {str(e)}"
 
 
-def analyze_keyword_video(client, videos_data, is_shorts=False):
+def analyze_keyword_video(client, llm, videos_data, is_shorts=False):
     # 해당 카테고리(쇼츠/롱폼)에 맞는 영상 필터링
     if is_shorts:
         filtered_data = videos_data[videos_data['쇼츠'] == True]
@@ -177,7 +253,7 @@ def analyze_keyword_video(client, videos_data, is_shorts=False):
     
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-2024-08-06",
+            model=llm,  # "gpt-4o-2024-08-06"
             messages=[
                 {"role": "system", "content": "당신은 키워드로 묶인 유튜브 영상들의 데이터를 분석하는 전문가입니다. 데이터를 깊이 있게 분석하고 통찰력 있는 인사이트를 제공해주세요."},
                 {"role": "user", "content": prompt}
