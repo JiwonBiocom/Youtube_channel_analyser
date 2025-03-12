@@ -15,7 +15,7 @@ from youtube import is_youtubeshorts, youtube_transcript
 from saveNload import save_info, load_info, fetch_youtube_data, get_top_videos_by_search_id, save_video_analysis, save_thumbnail_analysis
 from extract_blog_content import blog_content
 from analyse_video import analyze_channel_video, analyze_keyword_video, analyze_thumbnails
-from feedback import save_feedback
+from feedback import save_feedback_yt, save_feedback_ig, save_feedback_th
 
 
 st.set_page_config(page_title="유튜브 채널 분석기", layout="wide")
@@ -219,22 +219,44 @@ def blog_summarizer(client, llm, text):
 
 # # 메인 탭 # #
 st.title("유튜브 채널 분석기")
-tab1, tab3, tab2, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
-    "채널 데이터 수집", "채널 데이터 조회", "검색어 데이터 수집", "키워드 데이터 조회", 
-    "블로그 분석기", "블로그 통합 분석", 
-    "컨텐츠 만들기", "컨텐츠 평가", 
-    "썸네일 분석 내용 정리"
-])
+tab_channel, tab_keyword, tab_blog, tab_analysis, tab_content = st.tabs(["채널 분석", "검색어 분석", "블로그 분석", "분석 내용 확인", "컨텐츠 생성 및 평가"])
 
-# 탭 1: 채널 데이터 수집 탭
-with tab1:
-    st.subheader("채널 데이터 수집")
+# 채널 데이터 탭
+with tab_channel:
+    st.subheader("채널 분석")
     channel_url = st.text_input("유튜브 채널 주소 (e.g., https://youtube.com/@channelname)")
     keyword = st.text_input("동영상 제작에 사용할 키워드를 입력하세요")
     submit_button = st.button("데이터 수집 및 저장", type="primary")
 
     if submit_button and channel_url and keyword:
         try:
+            conn = connect_postgres()
+            cur = conn.cursor()
+
+            cur.execute("""SELECT COUNT(*) FROM channel_info WHERE channel_url = %s """, (channel_url,))
+            
+            count = cur.fetchone()[0]
+            
+            cur.close()
+            conn.close()
+        
+            if count > 0:
+                proceed_anyway = st.warning("이미 분석된 적 있는 채널입니다. 그래도 분석을 진행하시겠습니까?")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    proceed = st.button("예", key="confirm_analysis")
+                with col2:
+                    cancel = st.button("아니오", key="cancel_analysis")
+                    
+                # '아니오' 버튼 클릭 시 분석 버튼 비활성화
+                if cancel:
+                    st.stop()  # 여기서 실행 중단
+                
+                # '예' 버튼 클릭 시에만 분석 진행
+                if not proceed:
+                    st.stop()  # '예' 버튼이 클릭되지 않으면 중단
+                
             with st.spinner("채널 정보를 가져오는 중..."):
                 analyzer = YouTubeAnalyzer(YOUTUBE_API_KEY)
                 
@@ -288,30 +310,27 @@ with tab1:
     elif submit_button:
         st.warning("모든 필드를 입력해주세요: 채널 URL, 키워드, 검색 ID")
 
-# 탭 3: 채널 데이터 조회 탭
-with tab3:
+    st.markdown("---")
+
     st.subheader("저장된 채널 데이터 조회")
     
     # 세션 상태 초기화
-    if 'search_clicked_tab3' not in st.session_state:
-        st.session_state.search_clicked_tab3 = False
-    if 'shorts_analyzed_tab3' not in st.session_state:
-        st.session_state.shorts_analyzed_tab3 = False
-    if 'longform_analyzed_tab3' not in st.session_state:
-        st.session_state.longform_analyzed_tab3 = False
-    if 'shorts_analysis_result_tab3' not in st.session_state:
-        st.session_state.shorts_analysis_result_tab3 = None
-    if 'longform_analysis_result_tab3' not in st.session_state:
-        st.session_state.longform_analysis_result_tab3 = None
-    if 'shorts_thumbnail_analysis_tab3' not in st.session_state:  # 추가
-        st.session_state.shorts_thumbnail_analysis_tab3 = None
-    if 'longform_thumbnail_analysis_tab3' not in st.session_state:  # 추가
-        st.session_state.longform_thumbnail_analysis_tab3 = None
-    if 'found_data_tab3' not in st.session_state:
-        st.session_state.found_data_tab3 = None
-    
-    # 먼저 모든 채널별 최고 성과 동영상 표시
-    st.subheader("검색ID별 최고 성과 동영상 목록")
+    if 'search_clicked_channel' not in st.session_state:
+        st.session_state.search_clicked_channel = False
+    if 'shorts_analyzed_channel' not in st.session_state:
+        st.session_state.shorts_analyzed_channel = False
+    if 'longform_analyzed_channel' not in st.session_state:
+        st.session_state.longform_analyzed_channel = False
+    if 'shorts_analysis_result_channel' not in st.session_state:
+        st.session_state.shorts_analysis_result_channel = None
+    if 'longform_analysis_result_channel' not in st.session_state:
+        st.session_state.longform_analysis_result_channel = None
+    if 'shorts_thumbnail_analysis_channel' not in st.session_state:  # 추가
+        st.session_state.shorts_thumbnail_analysis_channel = None
+    if 'longform_thumbnail_analysis_channel' not in st.session_state:  # 추가
+        st.session_state.longform_thumbnail_analysis_channel = None
+    if 'found_data_channel' not in st.session_state:
+        st.session_state.found_data_channel = None
     
     try:
         top_videos_df = get_top_videos_by_search_id('channel_info')
@@ -344,42 +363,39 @@ with tab3:
     except Exception as e:
         st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
     
-    # 구분선 추가
-    st.markdown("---")
-    
     # 특정 채널 상세 분석 섹션
     st.subheader("특정 검색ID 상세 분석")
     search_id_input = st.number_input("분석할 검색 ID를 입력하세요", min_value=1, step=1)
     
     # 검색 버튼 콜백
-    def on_search_click_tab3():
-        st.session_state.search_clicked_tab3 = True
-        st.session_state.shorts_analyzed_tab3 = False
-        st.session_state.longform_analyzed_tab3 = False
-        st.session_state.shorts_analysis_result_tab3 = None
-        st.session_state.longform_analysis_result_tab3 = None
-        st.session_state.shorts_thumbnail_analysis_tab3 = None  # 추가
-        st.session_state.longform_thumbnail_analysis_tab3 = None  # 추가
-        st.session_state.found_data_tab3 = None  # 새 검색 시 데이터 초기화
+    def on_search_click_channel():
+        st.session_state.search_clicked_channel = True
+        st.session_state.shorts_analyzed_channel = False
+        st.session_state.longform_analyzed_channel = False
+        st.session_state.shorts_analysis_result_channel = None
+        st.session_state.longform_analysis_result_channel = None
+        st.session_state.shorts_thumbnail_analysis_channel = None  # 추가
+        st.session_state.longform_thumbnail_analysis_channel = None  # 추가
+        st.session_state.found_data_channel = None  # 새 검색 시 데이터 초기화
         
     # 쇼츠 분석 버튼 콜백
-    def on_analyze_shorts_click_tab3():
-        st.session_state.shorts_analyzed_tab3 = True
+    def on_analyze_shorts_click_channel():
+        st.session_state.shorts_analyzed_channel = True
     
     # 롱폼 분석 버튼 콜백
-    def on_analyze_longform_click_tab3():
-        st.session_state.longform_analyzed_tab3 = True
+    def on_analyze_longform_click_channel():
+        st.session_state.longform_analyzed_channel = True
     
-    search_button = st.button("검색", type="primary", key="search_button_tab3", on_click=on_search_click_tab3)
+    search_button = st.button("검색", type="primary", key="search_button_tab3", on_click=on_search_click_channel)
     
     # 검색 결과 표시
-    if st.session_state.search_clicked_tab3:
+    if st.session_state.search_clicked_channel:
         try:
-            if 'found_data_tab3' not in st.session_state or st.session_state.found_data_tab3 is None:
+            if 'found_data_channel' not in st.session_state or st.session_state.found_data_channel is None:
                 display_df = load_info(search_id_input, 'channel_info')
-                st.session_state.found_data_tab3 = display_df
+                st.session_state.found_data_channel = display_df
             else:
-                display_df = st.session_state.found_data_tab3
+                display_df = st.session_state.found_data_channel
             
             if not display_df.empty:
                 st.success(f"검색 ID {search_id_input}에 해당하는 데이터를 찾았습니다.")
@@ -436,24 +452,24 @@ with tab3:
                     st.info("해당 채널에는 쇼츠가 없습니다.")
                 else:
                     # 쇼츠 분석 버튼
-                    if not st.session_state.shorts_analyzed_tab3:
+                    if not st.session_state.shorts_analyzed_channel:
                         shorts_btn = st.button(
                             "쇼츠 분석 시작", 
                             type="primary", 
                             key="btn_analyze_shorts",
-                            on_click=on_analyze_shorts_click_tab3
+                            on_click=on_analyze_shorts_click_channel
                         )
                     
                     # 분석 수행 및 결과 표시
-                    if st.session_state.shorts_analyzed_tab3:
-                        if st.session_state.shorts_analysis_result_tab3 is None:
+                    if st.session_state.shorts_analyzed_channel:
+                        if st.session_state.shorts_analysis_result_channel is None:
                             with st.spinner("쇼츠 영상 분석 중..."):
                                 # 쇼츠 분석 수행
                                 shorts_analysis = analyze_channel_video(openai_client, llm_option, display_df, is_shorts=True)
-                                st.session_state.shorts_analysis_result_tab3 = shorts_analysis
+                                st.session_state.shorts_analysis_result_channel = shorts_analysis
 
                                 thumbnail_analysis_shorts = analyze_thumbnails(openai_client, display_df, is_shorts=True)
-                                st.session_state.shorts_thumbnail_analysis_tab3 = thumbnail_analysis_shorts
+                                st.session_state.shorts_thumbnail_analysis_channel = thumbnail_analysis_shorts
                                 
                                 # 분석 내용 저장
                                 save_video_analysis('channel_analysis', search_id_input, True, shorts_analysis)
@@ -463,12 +479,12 @@ with tab3:
                                 st.success("쇼츠 영상 분석 완료 및 저장되었습니다!")
                         
                         # 저장된 분석 결과 표시
-                        st.write(st.session_state.shorts_analysis_result_tab3)
+                        st.write(st.session_state.shorts_analysis_result_channel)
 
                         # 썸네일 분석 결과 표시
                         st.write("### 인기 썸네일 분석")
-                        if isinstance(st.session_state.shorts_thumbnail_analysis_tab3, list):
-                            for analysis in st.session_state.shorts_thumbnail_analysis_tab3:
+                        if isinstance(st.session_state.shorts_thumbnail_analysis_channel, list):
+                            for analysis in st.session_state.shorts_thumbnail_analysis_channel:
                                 st.write(f"#### {analysis['제목']}")
                                 cols = st.columns([1, 2])
                                 with cols[0]:
@@ -476,7 +492,7 @@ with tab3:
                                 with cols[1]:
                                     st.write(analysis['분석'])
                         else:
-                            st.write(st.session_state.shorts_thumbnail_analysis_tab3)
+                            st.write(st.session_state.shorts_thumbnail_analysis_channel)
                 
                 # 구분선
                 st.markdown("---")
@@ -488,24 +504,24 @@ with tab3:
                     st.info("해당 채널에는 롱폼이 없습니다.")
                 else:
                     # 롱폼 분석 버튼
-                    if not st.session_state.longform_analyzed_tab3:
+                    if not st.session_state.longform_analyzed_channel:
                         longform_btn = st.button(
                             "롱폼 분석 시작", 
                             type="primary", 
                             key="btn_analyze_longform",
-                            on_click=on_analyze_longform_click_tab3
+                            on_click=on_analyze_longform_click_channel
                         )
                     
                     # 분석 수행 및 결과 표시
-                    if st.session_state.longform_analyzed_tab3:
-                        if st.session_state.longform_analysis_result_tab3 is None:
+                    if st.session_state.longform_analyzed_channel:
+                        if st.session_state.longform_analysis_result_channel is None:
                             with st.spinner("롱폼 영상 분석 중..."):
                                 # 롱폼 분석 수행
                                 longform_analysis = analyze_channel_video(openai_client, llm_option, display_df, is_shorts=False)
-                                st.session_state.longform_analysis_result_tab3 = longform_analysis
+                                st.session_state.longform_analysis_result_channel = longform_analysis
                                 
                                 thumbnail_analysis_long = analyze_thumbnails(openai_client, display_df, is_shorts=False)
-                                st.session_state.longform_thumbnail_analysis_tab3 = thumbnail_analysis_long
+                                st.session_state.longform_thumbnail_analysis_channel = thumbnail_analysis_long
 
                                 # 분석 내용 저장
                                 save_video_analysis('channel_analysis', search_id_input, False, longform_analysis)
@@ -515,11 +531,11 @@ with tab3:
                                 st.success("롱폼 영상 분석 완료 및 저장되었습니다!")
                         
                         # 저장된 분석 결과 표시
-                        st.write(st.session_state.longform_analysis_result_tab3)
+                        st.write(st.session_state.longform_analysis_result_channel)
 
                         st.write("### 인기 썸네일 분석")
-                        if isinstance(st.session_state.longform_thumbnail_analysis_tab3, list):
-                            for analysis in st.session_state.longform_thumbnail_analysis_tab3:
+                        if isinstance(st.session_state.longform_thumbnail_analysis_channel, list):
+                            for analysis in st.session_state.longform_thumbnail_analysis_channel:
                                 st.write(f"#### {analysis['제목']}")
                                 cols = st.columns([1, 2])
                                 with cols[0]:
@@ -527,23 +543,51 @@ with tab3:
                                 with cols[1]:
                                     st.write(analysis['분석'])
                         else:
-                            st.write(st.session_state.longform_thumbnail_analysis_tab3)
+                            st.write(st.session_state.longform_thumbnail_analysis_channel)
             else:
                 st.warning(f"검색 ID {search_id_input}에 해당하는 데이터가 없습니다.")
-                st.session_state.found_data_tab3 = None
+                st.session_state.found_data_channel = None
         except Exception as e:
             st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
-            st.session_state.found_data_tab3 = None
+            st.session_state.found_data_channel = None
 
-# 탭 2: 키워드 기반 데이터 수집 탭
-with tab2:
-    st.subheader("검색어 데이터 수집")
+# 키워드 데이터 탭
+with tab_keyword:
+    st.subheader("검색어 분석")
     
     query = st.text_input("분석하고 싶은 키워드를 입력하세요:")
     max_results = st.slider("분석할 영상 수", 10, 50, 30)
     search_button = st.button("검색 시작", type="primary")
 
     if query and search_button:
+        # 있는 키워드를 경우 경고창
+        conn = connect_postgres()
+        cur = conn.cursor()
+
+        cur.execute("""SELECT COUNT(*) FROM keyword_info WHERE keyword = %s """, (query,))
+        
+        count = cur.fetchone()[0]
+        
+        cur.close()
+        conn.close()
+        
+        if count > 0:
+            proceed_anyway = st.warning("이미 분석된 적 있는 검색어입니다. 그래도 분석을 진행하시겠습니까?")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                proceed = st.button("예", key="confirm_analysis")
+            with col2:
+                cancel = st.button("아니오", key="cancel_analysis")
+                
+            # '아니오' 버튼 클릭 시 분석 버튼 비활성화
+            if cancel:
+                st.stop()  # 여기서 실행 중단
+            
+            # '예' 버튼 클릭 시에만 분석 진행
+            if not proceed:
+                st.stop()  # '예' 버튼이 클릭되지 않으면 중단
+
         with st.spinner("데이터를 수집하고 분석 중입니다..."):
             try:
                 # 검색 고유 ID 생성
@@ -610,8 +654,8 @@ with tab2:
             except Exception as e:
                 st.error(f"오류가 발생했습니다: {str(e)}")
 
-# 탭 4: 키워드 데이터 조회 탭
-with tab4:
+    st.markdown("---")
+    
     st.subheader("저장된 키워드 데이터 조회")
     
     # 세션 상태 초기화
@@ -665,9 +709,6 @@ with tab4:
             st.warning("저장된 채널 데이터가 없습니다.")
     except Exception as e:
         st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
-    
-    # 구분선 추가
-    st.markdown("---")
     
     # 특정 채널 상세 분석 섹션
     st.subheader("특정 검색ID 상세 분석")
@@ -857,47 +898,13 @@ with tab4:
             st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
             st.session_state.found_data_tab4 = None
 
-# 탭 5: 블로그 분석기 탭
-with tab5:
-    st.subheader("블로그 분석기")
+# 블로그 분석 탭
+with tab_blog:
+    st.subheader("블로그 분석")
 
     analysis_keyword = st.text_input('블로그 분석을 위한 키워드를 입력하세요. 분석 그룹의 이름을 결정합니다.')
     
-    # # 블로그 한개 분석
-    # blog_url = st.text_input('분석할 블로그 주소를 입력하세요.')  # 나중에 10개로 늘릴 예정
-    # analyse_button = st.button("블로그 분석 시작", type="primary")
-    
-    # if blog_url and analysis_keyword and analyse_button:
-    #     with st.spinner("블로그 내용을 분석 중입니다..."):
-    #         try:
-    #             extracted_data = blog_content(blog_url)
-
-    #             blog_summary = blog_summarizer(openai_client, extracted_data['content'])
-
-    #             conn = connect_postgres()
-    #             cur = conn.cursor()
-
-    #             # RETURNING 절 추가
-    #             cur.execute("""
-    #             INSERT INTO blog_summary (keyword, url, summary) 
-    #             VALUES (%s, %s, %s) RETURNING id
-    #             """, (analysis_keyword, blog_url, blog_summary))
-                
-    #             # 반환된 id 가져오기
-    #             inserted_id = cur.fetchone()[0]
-
-    #             conn.commit()
-    #             cur.close()
-    #             conn.close()
-
-    #             st.subheader("블로그 요약 결과")
-    #             st.write(blog_summary)
-                
-    #             st.success(f"블로그 분석 결과가 성공적으로 저장되었습니다! (ID: {inserted_id})")
-    #         except Exception as e:
-    #             st.error(f"블로그 분석 중 오류가 발생했습니다: {str(e)}")
-    
-    # # 블로그 여러개 분석
+    # 블로그 여러개 분석
     blog_urls_container = st.container()  # 컨테이너 생성
     
     # 세션 상태에 URL 리스트 초기화
@@ -1020,11 +1027,11 @@ with tab5:
                 for url, error in failed_urls:
                     with st.expander(f"실패한 URL: {url}"):
                         st.error(f"오류: {error}")
-   
-# 탭 6: 블로그 통합 분석 탭
-with tab6:
-    st.subheader("블로그 통합 분석")
     
+    st.markdown("---")
+    
+    st.subheader("블로그 통합 분석")
+
     # 모든 키워드별 블로그 요약 데이터 조회
     try:
         conn = connect_postgres()
@@ -1082,8 +1089,7 @@ with tab6:
                 if selected_summary:
                     with st.expander("블로그 요약 전체 내용", expanded=True):
                         st.markdown(selected_summary)
-            
-            st.markdown("---")  # 구분선 추가
+
         else:
             st.info("저장된 블로그 요약이 없습니다.")
             
@@ -1097,37 +1103,68 @@ with tab6:
                 conn.close()
         except:
             pass
-
+   
+   
     load_keyword = st.text_input('키워드를 입력하세요. 해당 키워드로 그루핑된 블로그 내용들을 통합 분석합니다.')
     int_analyse_button = st.button("통합 분석 시작", type="primary")  # integrated analysis
     
+    # # 한번 분석된 키워드면 경고창 띄우자
     if load_keyword and int_analyse_button:
-        with st.spinner(f"키워드 '{load_keyword}'로 저장된 블로그 요약을 통합 분석 중..."):
-            try:
-                # 데이터베이스에서 해당 키워드로 저장된 요약 조회
-                conn = connect_postgres()
-                cur = conn.cursor()
+        try:
+            conn = connect_postgres()
+            cur = conn.cursor()
+            
+            # 해당 키워드로 이미 통합 분석이 있는지 확인
+            cur.execute("""SELECT COUNT(*) FROM blog_int_summary WHERE keyword = %s """, (load_keyword,))
+            
+            count = cur.fetchone()[0]
+            
+            cur.close()
+            conn.close()
+            
+            # 이미 분석된 키워드인 경우 경고 표시
+            if count > 0:
+                proceed_anyway = st.warning("이미 통합 분석된 적 있는 키워드입니다. 그래도 분석을 진행하시겠습니까?")
                 
-                cur.execute("""
-                SELECT summary FROM blog_summary 
-                WHERE keyword = %s
-                """, (load_keyword,))
-                
-                summaries = [row[0] for row in cur.fetchall()]
-                
-                # 조회된 요약이 없는 경우
-                if not summaries:
-                    st.error(f"키워드 '{load_keyword}'로 저장된 블로그 요약이 없습니다.")
-                else:
-                    # 통합 분석을 위한 프롬프트 작성
-                    prompt = f"""
-다음은 "{load_keyword}" 키워드와 관련된 {len(summaries)}개의 블로그 포스트 요약입니다:
-
-"""
-                    for i, summary in enumerate(summaries):
-                        prompt += f"\n--- 블로그 {i+1} ---\n{summary}\n"
+                col1, col2 = st.columns(2)
+                with col1:
+                    proceed = st.button("예", key="confirm_analysis")
+                with col2:
+                    cancel = st.button("아니오", key="cancel_analysis")
                     
-                    prompt += f"""
+                # '아니오' 버튼 클릭 시 분석 버튼 비활성화
+                if cancel:
+                    st.stop()  # 여기서 실행 중단
+                
+                # '예' 버튼 클릭 시에만 분석 진행
+                if not proceed:
+                    st.stop()  # '예' 버튼이 클릭되지 않으면 중단
+            
+            # 분석된 적 없는 키워드인 경우 그냥 분석 진행
+            with st.spinner(f"키워드 '{load_keyword}'로 저장된 블로그 요약을 통합 분석 중..."):
+                try:
+                    # 데이터베이스에서 해당 키워드로 저장된 요약 조회
+                    conn = connect_postgres()
+                    cur = conn.cursor()
+                    
+                    cur.execute("""
+                    SELECT summary FROM blog_summary 
+                    WHERE keyword = %s
+                    """, (load_keyword,))
+                    
+                    summaries = [row[0] for row in cur.fetchall()]
+                    
+                    # 조회된 요약이 없는 경우
+                    if not summaries:
+                        st.error(f"키워드 '{load_keyword}'로 저장된 블로그 요약이 없습니다.")
+                    else:
+                        # 통합 분석을 위한 프롬프트 작성
+                        prompt = f"""다음은 "{load_keyword}" 키워드와 관련된 {len(summaries)}개의 블로그 포스트 요약입니다:"""
+                        
+                        for i, summary in enumerate(summaries):
+                            prompt += f"\n--- 블로그 {i+1} ---\n{summary}\n"
+                        
+                        prompt += f"""
 위의 블로그 요약들을 통합적으로 분석하여, 다음 사항을 포함한 포괄적인 요약을 작성해주세요:
 
 1. 주요 내용 및 공통 주제
@@ -1138,54 +1175,56 @@ with tab6:
 
 "{load_keyword}" 키워드를 중심으로 이 모든 블로그 내용을 잘 통합해서 요약해주세요.
 """
+                        
+                        # OpenAI API를 통한 통합 분석
+                        response = openai_client.chat.completions.create(
+                            model=llm_option, 
+                            messages=[
+                                {"role": "system", "content": "당신은 여러 블로그 포스트의 요약을 통합하여 분석하는 전문가입니다."},
+                                {"role": "user", "content": prompt}
+                            ],
+                            temperature=0.3,
+                            max_tokens=1500
+                        )
+                        
+                        integrated_summary = response.choices[0].message.content.strip()
+                        
+                        # 고유 ID 생성
+                        search_id = search_unique_id()
+                        
+                        # 통합 분석 결과 저장
+                        cur.execute("""
+                        INSERT INTO blog_int_summary (search_unique_id, keyword, int_summary)
+                        VALUES (%s, %s, %s)
+                        """, (search_id, load_keyword, integrated_summary))
+                        
+                        conn.commit()
+                        
+                        # 성공 메시지 표시
+                        st.success(f"{len(summaries)}개의 블로그 요약이 성공적으로 통합 분석되었습니다.")
+                        
+                        # 결과 표시
+                        st.subheader("통합 분석 결과")
+                        st.write(integrated_summary)
                     
-                    # OpenAI API를 통한 통합 분석
-                    response = openai_client.chat.completions.create(
-                        model=llm_option, 
-                        messages=[
-                            {"role": "system", "content": "당신은 여러 블로그 포스트의 요약을 통합하여 분석하는 전문가입니다."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.3,
-                        max_tokens=1500
-                    )
+                    cur.close()
+                    conn.close()
                     
-                    integrated_summary = response.choices[0].message.content.strip()
-                    
-                    # 고유 ID 생성
-                    search_id = search_unique_id()
-                    
-                    # 통합 분석 결과 저장
-                    cur.execute("""
-                    INSERT INTO blog_int_summary (search_unique_id, keyword, int_summary)
-                    VALUES (%s, %s, %s)
-                    """, (search_id, load_keyword, integrated_summary))
-                    
-                    conn.commit()
-                    
-                    # 성공 메시지 표시
-                    st.success(f"{len(summaries)}개의 블로그 요약이 성공적으로 통합 분석되었습니다.")
-                    
-                    # 결과 표시
-                    st.subheader("통합 분석 결과")
-                    st.write(integrated_summary)
-                
-                cur.close()
-                conn.close()
-                
-            except Exception as e:
-                st.error(f"통합 분석 중 오류가 발생했습니다: {str(e)}")
-                # 에러 발생 시 연결 닫기
-                try:
-                    if 'conn' in locals() and conn:
-                        conn.rollback()
-                        cur.close()
-                        conn.close()
-                except:
-                    pass
-        
-# 탭 7: 콘텐츠 생성하기 탭
-with tab7:
+                except Exception as e:
+                    st.error(f"통합 분석 중 오류가 발생했습니다: {str(e)}")
+                    # 에러 발생 시 연결 닫기
+                    try:
+                        if 'conn' in locals() and conn:
+                            conn.rollback()
+                            cur.close()
+                            conn.close()
+                    except:
+                        pass
+        except Exception as e:
+            st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
+
+# 콘텐츠 생성하기 탭
+with tab_content:
     st.subheader("콘텐츠 생성하기")
     
     # 세션 상태 초기화
@@ -1257,8 +1296,6 @@ with tab7:
     
     except Exception as e:
         st.error(f"블로그 통합 분석 데이터 조회 중 오류가 발생했습니다: {str(e)}")
-    
-    st.markdown("---")
     
     # 콘텐츠 생성 버튼
     yt_button = st.button("유튜브 콘텐츠 만들기", type="primary")
@@ -1428,102 +1465,127 @@ with tab7:
     elif yt_button and not blog_id:
         st.warning("블로그 분석 ID를 입력해주세요.")
     
-#     # 인스타 콘텐츠 생성 (보류)
-#     if insta_button and blog_id:
-#         with st.spinner('인스타그램 콘텐츠를 생성하는 중입니다...'):
-#             try:
-#                 conn = connect_postgres()
-#                 cur = conn.cursor()
-#                 cur.execute("""SELECT int_summary, keyword FROM blog_int_summary WHERE search_unique_id = %s""", (blog_id,))
+    # 인스타 콘텐츠 생성
+    if insta_button and blog_id:
+        with st.spinner('인스타그램 콘텐츠를 생성하는 중입니다...'):
+            try:
+                conn = connect_postgres()
+                cur = conn.cursor()
+                cur.execute("""SELECT int_summary, keyword FROM blog_int_summary WHERE search_unique_id = %s""", (blog_id,))
                 
-#                 result = cur.fetchone()
-#                 cur.close()
-#                 conn.close()
+                result = cur.fetchone()
+                cur.close()
+                conn.close()
                     
-#                 if result:
-#                     blog_summary = result[0]
-#                     keyword = result[1]
-#                 else:
-#                     st.error(f"ID {blog_id}에 해당하는 블로그 분석을 찾을 수 없습니다.")
-#                     st.stop()
+                if result:
+                    blog_summary = result[0]
+                    keyword = result[1]
+                else:
+                    st.error(f"ID {blog_id}에 해당하는 블로그 분석을 찾을 수 없습니다.")
+                    st.stop()
 
 
-#                 prompt = f"""
-# 위 정보들을 토대로 '{keyword}'에 관한 동영상 제목 및 썸네일 이미지 내용 각각 3가지, 스크립트 하나를 생성해주세요.
+                prompt = f"""인스타그램 콘텐츠를 작성하고자 합니다.
 
-# 꼭 아래 포맷대로 생성 해주세요:
-# [제목]
-# 제목 3가지
+인스타그램은 사진과 영상이 핵심인 시각적 플랫폼이지만, 게시글(캡션)과 해시태그 역시 매우 중요합니다. 아래 핵심 요소들을 게시글에 반영해 주세요:
 
-# [썸네일]
-# 썸네일 3가지
+1. 비주얼 중심의 디자인:
+- 고퀄리티 이미지/영상: 인스타그램은 시각적 플랫폼이므로, 선명하고 매력적인 사진이나 영상을 사용해야 합니다.
+- 통일된 스타일: 필터, 색감, 레이아웃 등에서 일관성을 유지해 브랜드 정체성을 확실히 하세요.
 
-# [스크립트]
-# 스크립트 1가지
-# """
-#                 content_ig = openai_client.chat.completions.create(
-#                     model=llm_option, 
-#                     messages=[
-#                         {"role": "system", "content": "당신은 카피라이팅 법칙을 따라 수집된 데이터에 기반하여 인스타그램 컨텐츠를 만드는 전문가입니다."},
-#                         {"role": "user", "content": prompt}
-#                     ],
-#                     temperature=0.3,
-#                     max_tokens=1500
-#                 )
+2. 간결하고 강렬한 캡션:
+- 핵심 메시지 전달: 짧은 문장 안에 핵심 아이디어나 스토리를 담아 독자의 관심을 유도합니다.
+- 후킹 요소 포함: 캡션의 첫 문장으로 질문, 도발적인 문구, 혹은 놀라운 사실을 제시해 관심을 끌어보세요.
+
+3. 효과적인 해시태그 전략:
+- 관련 해시태그 활용: 콘텐츠와 연관된 인기 해시태그를 선택해 도달 범위를 확장합니다.
+- 브랜딩 해시태그: 고유의 브랜드 해시태그를 만들어 꾸준히 사용하면, 팔로워들이 쉽게 관련 콘텐츠를 찾아볼 수 있습니다.
+
+4. 대화형 및 참여 유도
+- 콜 투 액션 (CTA): 팔로워에게 댓글을 달거나 질문에 응답하도록 유도하는 문구를 포함하세요.
+- 스토리, 리포스트, DM 활용: 인스타그램의 다양한 기능을 활용해 사용자와의 상호작용을 극대화합니다.
+
+5. 일관된 톤과 메시지:
+- 브랜드 보이스 유지: 작성하는 모든 캡션과 콘텐츠에서 브랜드의 톤과 메시지를 일관되게 전달해 신뢰도를 높입니다.
+
+그리고 아래 글쓰기 법칙 4가지를 지켜주세요:
+1. SHORT & SIMPLE (짧고 간결하게, 핵심 먼저)
+2. HOOK & FLOW (후킹 → 자연스러운 흐름)
+3. YOU-FOCUSED (독자 중심, 독자의 이익 강조)
+4. CREDIBILITY & ACTION (신뢰도 확보 + 행동 유도)
+
+블로그 통합 요약 내용: {blog_summary}
+
+위 정보들을 토대로, '{keyword}'에 관한 인스타그램 게시물을 아래 포맷에 맞춰 생성해 주세요:
+[사진]
+
+[게시글]
+
+[해시 태그]
+"""
+                content_ig = openai_client.chat.completions.create(
+                    model=llm_option, 
+                    messages=[
+                        {"role": "system", "content": "당신은 카피라이팅 법칙을 따라 수집된 데이터에 기반하여 인스타그램 컨텐츠를 만드는 전문가입니다."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=1500
+                )
                 
-#                 result_ig = content_ig.choices[0].message.content.strip()
+                result_ig = content_ig.choices[0].message.content.strip()
                 
-#                 # 세션 상태에 결과 저장 (화면 표시용)
-#                 st.session_state.generated_content_ig = result_ig
-#                 st.session_state.content_generated_ig = True
+                # 세션 상태에 결과 저장 (화면 표시용)
+                st.session_state.generated_content_ig = result_ig
+                st.session_state.content_generated_ig = True
 
-#                 try:
-#                     parts = result_ig.split("\n\n")
+                try:
+                    parts = result_ig.split("\n\n")
                     
-#                     # title = ""
-#                     # thumbnail = ""
-#                     # script = ""
+                    pics = ""
+                    caption = ""
+                    hashtags = ""
                         
-#                     # # 각 부분 추출
-#                     # for i, part in enumerate(parts):
-#                     #     if part.startswith("[제목]"):  # 제목 문자열 추출 (첫 줄은 [제목]이므로 제외)
-#                     #         title_lines = part.split("\n")[1:]
-#                     #         title = "\n".join(title_lines).strip()
-#                     #     elif part.startswith("[썸네일]"):  # 썸네일 문자열 추출 (첫 줄은 [썸네일]이므로 제외)
-#                     #         thumbnail_lines = part.split("\n")[1:]
-#                     #         thumbnail = "\n".join(thumbnail_lines).strip()
-#                     #     elif part.startswith("[스크립트]"):  # 스크립트 문자열 추출 (첫 줄은 [스크립트]이므로 제외)
-#                     #         script_lines = part.split("\n")[1:]
-#                     #         script = "\n".join(script_lines).strip()
+                    # 각 부분 추출
+                    for i, part in enumerate(parts):
+                        if part.startswith("[사진]"):
+                            pics_lines = part.split("\n")[1:]
+                            pics = "\n".join(pics_lines).strip()
+                        elif part.startswith("[게시글]"):
+                            caption_lines = part.split("\n")[1:]
+                            caption = "\n".join(caption_lines).strip()
+                        elif part.startswith("[해시 태그]"):
+                            hashtags_lines = part.split("\n")[1:]
+                            hashtags = "\n".join(hashtags_lines).strip()
                     
-#                     # 생성한 인스타그램램 컨텐츠 정보를 DB에 저장
-#                     try:
-#                         conn = connect_postgres()
-#                         cur = conn.cursor()
+                    # 생성한 인스타그램 컨텐츠 정보를 DB에 저장
+                    try:
+                        conn = connect_postgres()
+                        cur = conn.cursor()
                             
-#                         # 생성된 콘텐츠 저장
-#                         cur.execute("""
-#                             INSERT INTO instagram_content (blog_id, keyword, title, thumbnail, script)
-#                             VALUES (%s, %s, %s, %s, %s)
-#                             """, (blog_id, keyword, title, thumbnail, script))
+                        # 생성된 콘텐츠 저장
+                        cur.execute("""
+                            INSERT INTO instagram_content (blog_id, keyword, pics, caption, hashtags)
+                            VALUES (%s, %s, %s, %s, %s)
+                            """, (blog_id, keyword, pics, caption, hashtags))
                         
-#                         conn.commit()
-#                         cur.close()
-#                         conn.close()
+                        conn.commit()
+                        cur.close()
+                        conn.close()
                         
-#                         st.success("인스타그램 콘텐츠가 성공적으로 생성되고 저장되었습니다!")
+                        st.success("인스타그램 콘텐츠가 성공적으로 생성되고 저장되었습니다!")
 
-#                     except Exception as e:
-#                         st.error(f"인스타그램 콘텐츠 저장 중 오류가 발생했습니다: {str(e)}")
+                    except Exception as e:
+                        st.error(f"인스타그램 콘텐츠 저장 중 오류가 발생했습니다: {str(e)}")
                 
-#                 except Exception as e:
-#                     st.error(f"생성된 인스타그램 콘텐츠 파싱 중 오류가 발생했습니다: {str(e)}")
+                except Exception as e:
+                    st.error(f"생성된 인스타그램 콘텐츠 파싱 중 오류가 발생했습니다: {str(e)}")
             
-#             except Exception as e:
-#                 st.error(f"인스타그램 콘텐츠 생성 중 오류가 발생했습니다: {str(e)}")
-#     elif insta_button and not blog_id:
-#         st.warning("블로그 분석 ID를 입력해주세요.")
-        
+            except Exception as e:
+                st.error(f"인스타그램 콘텐츠 생성 중 오류가 발생했습니다: {str(e)}")
+    elif insta_button and not blog_id:
+        st.warning("블로그 분석 ID를 입력해주세요.")
+    
     # 쓰레드 콘텐츠 생성
     if thrd_button and blog_id:
         with st.spinner('쓰레드 콘텐츠를 생성하는 중입니다...'):
@@ -1543,34 +1605,45 @@ with tab7:
                     st.error(f"ID {blog_id}에 해당하는 블로그 분석을 찾을 수 없습니다.")
                     st.stop()
 
-                prompt = f"""
+                prompt = f"""새로 만들 Threads 콘텐츠를 작성하고자 합니다.
 
-또한 이 블로그 통합 요약 내용도 반영해주세요: {blog_summary}
+게시글에는 다음과 같은 핵심 요소가 반드시 포함되어야 합니다:
+1. 핵심 메시지와 목적 명확화: 짧은 글로 강렬한 핵심 메시지를 전달하기 위해, 콘텐츠의 주제와 목표를 사전에 명확히 설정할 것
+2. 후킹(Hook) 요소: 첫 문장은 독자의 관심을 즉시 끌어야 하므로, 질문, 도발적인 주장 또는 놀라운 사실 등으로 시작하여 관심을 유도할 것
+3. 간결함과 명료함: 제한된 글자수 내에서 불필요한 단어를 제거하고 핵심 메시지만 담도록 작성할 것
+4. 비주얼 요소의 활용: 이미지나 이모지 등 시각적 요소를 적절히 사용하여 눈길을 끌고 메시지를 보완할 것
+5. 일관된 톤과 브랜딩: 브랜드나 개인의 목소리를 일관되게 유지해 팔로워들이 콘텐츠를 쉽게 인식할 수 있도록 할 것
+6. 대화형 접근: 소통과 댓글을 통한 상호작용이 중요하므로, 독자에게 질문을 던지거나 의견을 유도하는 콜 투 액션(CTA)을 포함할 것
 
-위 정보들을 토대로 '{keyword}'에 관한 동영상 제목 및 썸네일 이미지 내용 각각 3가지, 스크립트 하나를 생성해주세요.
+아래 글쓰기 법칙 4가지를 지켜주세요:
+1. SHORT & SIMPLE (짧고 간결하게, 핵심 먼저)
+2. HOOK & FLOW (후킹 → 자연스러운 흐름)
+3. YOU-FOCUSED (독자 중심, 독자의 이익 강조)
+4. CREDIBILITY & ACTION (신뢰도 확보 + 행동 유도)
 
-꼭 아래 포맷대로 생성 해주세요:
-[제목]
-제목 3가지
+추가로, 게시글을 돋보이게 할 수 있는 이미지 내용과 태그도 추천해주세요. 이건 선택사항입니다.
 
-[썸네일]
-썸네일 3가지
+블로그 통합 요약 내용: {blog_summary}
 
-[스크립트]
-스크립트 1가지
+위 정보들을 토대로, '{keyword}'에 관한 Threads 게시물을 아래 포맷에 맞춰 생성해주세요:
+[게시글]
+
+[사진]
+
+[태그]
 """
                 
                 content_th = openai_client.chat.completions.create(
                     model=llm_option, 
                     messages=[
-                        {"role": "system", "content": "당신은 카피라이팅 법칙을 따라 수집된 데이터에 기반하여 쓰레드 컨텐츠를 만드는 전문가입니다."},
+                        {"role": "system", "content": "당신은 수집된 데이터에 기반하여 쓰레드 콘텐츠를 만드는 전문가입니다."},
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.3,
                     max_tokens=1500
                 )
                 
-                result_th = content.choices[0].message.content.strip()
+                result_th = content_th.choices[0].message.content.strip()
                 
                 # 세션 상태에 결과 저장 (화면 표시용)
                 st.session_state.generated_content_th = result_th
@@ -1579,32 +1652,32 @@ with tab7:
                 try:
                     parts = result_th.split("\n\n")
                     
-                    # title = ""
-                    # thumbnail = ""
-                    # script = ""
+                    post = ""
+                    pics = ""
+                    tags = ""
                         
-                    # # 각 부분 추출
-                    # for i, part in enumerate(parts):
-                    #     if part.startswith("[제목]"):  # 제목 문자열 추출 (첫 줄은 [제목]이므로 제외)
-                    #         title_lines = part.split("\n")[1:]
-                    #         title = "\n".join(title_lines).strip()
-                    #     elif part.startswith("[썸네일]"):  # 썸네일 문자열 추출 (첫 줄은 [썸네일]이므로 제외)
-                    #         thumbnail_lines = part.split("\n")[1:]
-                    #         thumbnail = "\n".join(thumbnail_lines).strip()
-                    #     elif part.startswith("[스크립트]"):  # 스크립트 문자열 추출 (첫 줄은 [스크립트]이므로 제외)
-                    #         script_lines = part.split("\n")[1:]
-                    #         script = "\n".join(script_lines).strip()
+                    # 각 부분 추출
+                    for i, part in enumerate(parts):
+                        if part.startswith("[게시글]"):  # 제목 문자열 추출 (첫 줄은 [게시글]이므로 제외)
+                            post_lines = part.split("\n")[1:]
+                            post = "\n".join(post_lines).strip()
+                        elif part.startswith("[사진]"):  # 썸네일 문자열 추출 (첫 줄은 [사진]이므로 제외)
+                            pics_lines = part.split("\n")[1:]
+                            pics = "\n".join(pics_lines).strip()
+                        elif part.startswith("[태그]"):  # 스크립트 문자열 추출 (첫 줄은 [태그]이므로 제외)
+                            tags_lines = part.split("\n")[1:]
+                            tags = "\n".join(tags_lines).strip()
                     
                     # 생성한 쓰레드 컨텐츠 정보를 DB에 저장
                     try:
                         conn = connect_postgres()
                         cur = conn.cursor()
-                            
+                        
                         # 생성된 콘텐츠 저장
                         cur.execute("""
-                            INSERT INTO thread_content (blog_id, keyword, title, thumbnail, script)
+                            INSERT INTO threads_content (blog_id, keyword, post, pics, tags)
                             VALUES (%s, %s, %s, %s, %s)
-                            """, (blog_id, keyword, title, thumbnail, script))
+                            """, (blog_id, keyword, post, pics, tags))
                         
                         conn.commit()
                         cur.close()
@@ -1649,9 +1722,9 @@ with tab7:
         with st.expander("원본 생성 텍스트 보기", expanded=True):
             if hasattr(st.session_state, 'generated_content_th'):
                 st.text(st.session_state.generated_content_th)
-
-# 탭 8: 콘텐츠 평가하기 탭
-with tab8:
+    
+    st.markdown("---")
+    
     st.subheader("콘텐츠 평가하기")
     
     # 유튜브 콘텐츠 평가
@@ -1663,7 +1736,7 @@ with tab8:
         
         # 모든 유튜브 콘텐츠 조회
         cur.execute("""
-        SELECT id, title, thumbnail, script 
+        SELECT id, keyword, title, thumbnail, script 
         FROM youtube_content 
         ORDER BY created_at DESC
         """)
@@ -1673,11 +1746,12 @@ with tab8:
         conn.close()
         
         if youtube_contents:
-            df_contents = pd.DataFrame(youtube_contents, columns=['ID', '제목', '썸네일', '스크립트'])
+            df_contents = pd.DataFrame(youtube_contents, columns=['ID', '키워드', '제목', '썸네일', '스크립트'])
             st.dataframe(
                 df_contents,
                 column_config={
                     "ID": st.column_config.Column(width="small"),
+                    "키워드": st.column_config.Column(width="small"),
                     "제목": st.column_config.Column(width="large"),
                     "썸네일": st.column_config.Column(width="large"),
                     "스크립트": st.column_config.Column(width="large"),
@@ -1689,14 +1763,14 @@ with tab8:
             st.info("평가할 유튜브 콘텐츠가 없습니다. 먼저 콘텐츠를 생성해주세요.")
             
     except Exception as e:
-        st.error(f"콘텐츠 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
-    
-    content_id = st.number_input("평가할 콘텐츠 ID를 입력하세요", min_value=1, step=1)
-    feedback_score_yt = st.slider("이 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
-    feedback_text_yt = st.text_area("개선 사항이나 추가 의견이 있다면 알려주세요")
+        st.error(f"유튜브 콘텐츠 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
+
+    content_id_yt = st.number_input("평가할 콘텐츠 ID를 입력하세요", min_value=1, step=1)
+    feedback_score_yt = st.slider("이 유튜브 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
+    feedback_text_yt = st.text_area("이 유튜브 콘텐츠의 개선 사항이나 추가 의견이 있다면 알려주세요")
     submit_feedback_yt = st.button("피드백 제출", key="submit_youtube")
 
-    if submit_feedback_yt and feedback_score_yt and feedback_text_yt and content_id:
+    if submit_feedback_yt and feedback_score_yt and feedback_text_yt and content_id_yt:
         # 데이터베이스에서 해당 ID의 콘텐츠 정보 가져오기
         try:
             conn = connect_postgres()
@@ -1706,7 +1780,7 @@ with tab8:
             SELECT title, thumbnail, script
             FROM youtube_content
             WHERE id = %s
-            """, (content_id,))
+            """, (content_id_yt,))
             
             content_info = cur.fetchone()
             cur.close()
@@ -1716,77 +1790,273 @@ with tab8:
                 title, thumbnail, script = content_info
                 
                 # 피드백 저장
-                success = save_feedback(content_id, title, thumbnail, script, feedback_score_yt, feedback_text_yt, "YouTube")
+                success = save_feedback_yt(content_id_yt, title, thumbnail, script, feedback_score_yt, feedback_text_yt, "YouTube")
 
                 if success:
-                    st.success(f"콘텐츠 ID {content_id}에 대한 피드백이 성공적으로 저장되었습니다!")
+                    st.success(f"콘텐츠 ID {content_id_yt}에 대한 피드백이 성공적으로 저장되었습니다!")
             else:
-                st.error(f"ID {content_id}에 해당하는 콘텐츠를 찾을 수 없습니다.")
+                st.error(f"ID {content_id_yt}에 해당하는 콘텐츠를 찾을 수 없습니다.")
                 
         except Exception as e:
             st.error(f"콘텐츠 정보를 가져오는 중 오류가 발생했습니다: {str(e)}")
     elif submit_feedback_yt:
-        if not content_id:
+        if not content_id_yt:
             st.warning("평가할 콘텐츠 ID를 입력해주세요.")
         elif not feedback_text_yt:
             st.warning("개선 사항이나 의견을 입력해주세요.")
 
-        
-    # # 인스타그램 콘텐츠 평가
-    # st.subheader("인스타그램 콘텐츠 품질 평가")
-    # feedback_score_ig = st.slider("이 인스타그램 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
-    # feedback_text_ig = st.text_area("개선 사항이나 추가 의견이 있다면 알려주세요")
-    # submit_feedback_ig = st.button("피드백 제출", key="submit_instagram")
+    st.markdown("---")
 
-    # if submit_feedback_ig:
-    #     if hasattr(st.session_state, 'title_ig') and hasattr(st.session_state, 'thumbnail_ig') and hasattr(st.session_state, 'script_ig'):
-    #         success = save_feedback(
-    #             st.session_state.title_ig, st.session_state.thumbnail_ig, st.session_state.script_ig, 
-    #             feedback_score_yt, feedback_text_yt, "Instagram"
-    #         )
-
-    #         if success:
-    #             st.success("인스타그램 콘텐츠에 대한 피드백이 성공적으로 저장되었습니다!")
-    # else:
-    #     st.error("피드백을 저장할 콘텐츠 정보가 없습니다.")
+    # 인스타그램 콘텐츠 평가
+    st.subheader("인스타그램 콘텐츠 품질 평가")
     
+    # 모든 인스타그램 콘텐츠 조회
+    try:
+        conn = connect_postgres()
+        cur = conn.cursor()
+        
+        # 모든 인스타그램 콘텐츠 조회
+        cur.execute("""
+        SELECT id, keyword, pics, caption, hashtags 
+        FROM instagram_content 
+        ORDER BY created_at DESC
+        """)
+        
+        instagram_contents = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        if instagram_contents:
+            df_contents = pd.DataFrame(instagram_contents, columns=['ID', '키워드', '사진', '설명', '해시 태그'])
+            st.dataframe(
+                df_contents,
+                column_config={
+                    "ID": st.column_config.Column(width="small"),
+                    "키워드": st.column_config.Column(width="small"),
+                    "사진": st.column_config.Column(width="large"),
+                    "설명": st.column_config.Column(width="large"),
+                    "해시 태그": st.column_config.Column(width="large"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+        else:
+            st.info("평가할 인스타그램 콘텐츠가 없습니다. 먼저 콘텐츠를 생성해주세요.")
+            
+    except Exception as e:
+        st.error(f"인스타그램 콘텐츠 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
+    
+    content_id_ig = st.number_input("평가할 인스타 콘텐츠 ID를 입력하세요", min_value=1, step=1)
+    feedback_score_ig = st.slider("이 인스타그램 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
+    feedback_text_ig = st.text_area("이 인스타그램 개선 사항이나 추가 의견이 있다면 알려주세요")
+    submit_feedback_ig = st.button("인스타 피드백 제출", key="submit_instagram")
+    
+    if submit_feedback_ig and feedback_score_ig and feedback_text_ig and content_id_ig:
+        # 데이터베이스에서 해당 ID의 콘텐츠 정보 가져오기
+        try:
+            conn = connect_postgres()
+            cur = conn.cursor()
+            
+            cur.execute("""
+            SELECT pics, caption, hashtags
+            FROM instagram_content
+            WHERE id = %s
+            """, (content_id_ig,))
+            
+            content_info = cur.fetchone()
+            cur.close()
+            conn.close()
+            
+            if content_info:
+                pics, caption, hashtags = content_info
+                
+                # 피드백 저장
+                success = save_feedback_ig(content_id_ig, pics, caption, hashtags, feedback_score_ig, feedback_text_ig)
 
-    # # 쓰레드 콘텐츠 평가
-    # st.subheader("쓰레드 콘텐츠 품질 평가")
-    # feedback_score_th = st.slider("이 쓰레드 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
-    # feedback_text_th = st.text_area("개선 사항이나 추가 의견이 있다면 알려주세요")
-    # submit_feedback_th = st.button("피드백 제출", key="submit_threads")
+                if success:
+                    st.success(f"콘텐츠 ID {content_id_ig}에 대한 인스타그램 피드백이 성공적으로 저장되었습니다!")
+            else:
+                st.error(f"ID {content_id_ig}에 해당하는 인스타그램 콘텐츠를 찾을 수 없습니다.")
+                
+        except Exception as e:
+            st.error(f"콘텐츠 정보를 가져오는 중 오류가 발생했습니다: {str(e)}")
+    elif submit_feedback_ig:
+        if not content_id_ig:
+            st.warning("평가할 인스타그램 콘텐츠 ID를 입력해주세요.")
+        elif not feedback_text_ig:
+            st.warning("개선 사항이나 의견을 입력해주세요.")
+    
+    st.markdown("---")
 
-    # if submit_feedback_th:
-    #     if hasattr(st.session_state, 'title_th') and hasattr(st.session_state, 'thumbnail_th') and hasattr(st.session_state, 'script_th'):
-    #         success = save_feedback(
-    #             st.session_state.title_th, st.session_state.thumbnail_th, st.session_state.script_th, 
-    #             feedback_score_th, feedback_text_th, "Threads"
-    #         )
-
-    #         if success:
-    #             st.success("스레드 콘텐츠에 대한 피드백이 성공적으로 저장되었습니다!")
-    # else:
-    #     st.error("피드백을 저장할 콘텐츠 정보가 없습니다.")
-
-# 탭 9: 분석 내용 확인하기 탭
-with tab9:
-    st.subheader("썸네일 분석 내용 정리")
+    # 쓰레드 콘텐츠 평가
+    st.subheader("스레드 콘텐츠 품질 평가")
     
     try:
+        conn = connect_postgres()
+        cur = conn.cursor()
+        
+        # 모든 인스타그램 콘텐츠 조회
+        cur.execute("""
+        SELECT id, keyword, post, pics, tags 
+        FROM threads_content 
+        ORDER BY created_at DESC
+        """)
+        
+        threads_contents = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        if threads_contents:
+            df_contents = pd.DataFrame(threads_contents, columns=['ID', '키워드', '게시글', '사진', '태그'])
+            st.dataframe(
+                df_contents,
+                column_config={
+                    "ID": st.column_config.Column(width="small"),
+                    "키워드": st.column_config.Column(width="small"),
+                    "게시글": st.column_config.Column(width="large"),
+                    "사진": st.column_config.Column(width="large"),
+                    "태그": st.column_config.Column(width="large"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+        else:
+            st.info("평가할 스레드 콘텐츠가 없습니다. 먼저 콘텐츠를 생성해주세요.")
+            
+    except Exception as e:
+        st.error(f"스레드 콘텐츠 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
+    
+    content_id_th = st.number_input("평가할 스레드 콘텐츠 ID를 입력하세요", min_value=1, step=1)
+    feedback_score_th = st.slider("이 스레드 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
+    feedback_text_th = st.text_area("이 스레드 콘텐츠의 개선 사항이나 추가 의견이 있다면 알려주세요")
+    submit_feedback_th = st.button("스레드 피드백 제출", key="submit_threads")
+
+    if submit_feedback_th and feedback_score_th and feedback_text_th and content_id_th:
+        # 데이터베이스에서 해당 ID의 콘텐츠 정보 가져오기
+        try:
+            conn = connect_postgres()
+            cur = conn.cursor()
+            
+            cur.execute("""
+            SELECT post, pics, tags
+            FROM threads_content
+            WHERE id = %s
+            """, (content_id_th,))
+            
+            content_info = cur.fetchone()
+            cur.close()
+            conn.close()
+            
+            if content_info:
+                post, pics, tags = content_info
+                
+                # 피드백 저장
+                success = save_feedback_th(content_id_th, post, pics, tags, feedback_score_th, feedback_text_th)
+
+                if success:
+                    st.success(f"콘텐츠 ID {content_id_th}에 대한 쓰레드 피드백이 성공적으로 저장되었습니다!")
+            else:
+                st.error(f"ID {content_id_th}에 해당하는 쓰레드 콘텐츠를 찾을 수 없습니다.")
+                
+        except Exception as e:
+            st.error(f"콘텐츠 정보를 가져오는 중 오류가 발생했습니다: {str(e)}")
+    elif submit_feedback_th:
+        if not content_id_th:
+            st.warning("평가할 쓰레드 콘텐츠 ID를 입력해주세요.")
+        elif not feedback_text_th:
+            st.warning("개선 사항이나 의견을 입력해주세요.")
+
+# 분석 내용 확인하기 탭
+with tab_analysis:
+    try:
+        # 채널 분석 내용 정리
+        st.subheader("채널 정리")
+        
         conn = connect_postgres()
         cur = conn.cursor()
 
         cur.execute("""
         SELECT 
-            video_thumbnail, search_unique_id, keyword, channel_url, channel_name, video_id, video_title, is_shorts, thumbnail_analysis
+            search_unique_id, is_shorts, channel_result, created_at
+        FROM 
+            channel_analysis
+        ORDER BY 
+            created_at DESC
+        """)
+
+        channel_results = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        
+        channel_columns = ['검색ID', '쇼츠', '분석 내용', '생성일시']
+        channel_df = pd.DataFrame(channel_results, columns=channel_columns)
+        st.dataframe(
+            channel_df,
+            column_config={
+                "검색ID": st.column_config.Column(width="small"),
+                "쇼츠": st.column_config.Column(width="small"),
+                "분석 내용": st.column_config.TextColumn(width="large"),
+                "생성일시": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        st.markdown("---")
+
+        # 키워드 분석 내용 정리
+        st.subheader("키워드 정리")
+        
+        conn = connect_postgres()
+        cur = conn.cursor()
+
+        cur.execute("""
+        SELECT 
+            search_unique_id, is_shorts, keyword_result, created_at
+        FROM 
+            keyword_analysis
+        ORDER BY
+            created_at DESC
+        """)
+
+        keyword_results = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        
+        keyword_columns = ['검색ID', '쇼츠', '분석 내용', '생성일시']
+        keyword_df = pd.DataFrame(channel_results, columns=keyword_columns)
+        st.dataframe(
+            keyword_df,
+            column_config={
+                "검색ID": st.column_config.Column(width="small"),
+                "쇼츠": st.column_config.Column(width="small"),
+                "분석 내용": st.column_config.TextColumn(width="large"),
+                "생성일시": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm")
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        st.markdown("---")
+
+        # 썸네일 분석 내용 정리
+        st.subheader("썸네일 분석 내용 정리")
+        
+        conn = connect_postgres()
+        cur = conn.cursor()
+
+        cur.execute("""
+        SELECT 
+            video_thumbnail, search_unique_id, keyword, channel_url, channel_name, video_id, video_title, is_shorts, thumbnail_result
         FROM 
             thumbnail_analysis
         ORDER BY
             created_at DESC
         """)
 
-        results = cur.fetchall()
+        thumbnail_results = cur.fetchall()
         
         cur.close()
         conn.close()
@@ -1794,9 +2064,9 @@ with tab9:
         # 키워드도 조회해야
         columns = ['썸네일', '검색ID', '키워드', '채널URL', '채널명', 'video_id', '제목', '쇼츠', '썸네일 분석']
         
-        df = pd.DataFrame(results, columns=columns)
+        thumbnail_df = pd.DataFrame(thumbnail_results, columns=columns)
         st.dataframe(
-            df,
+            thumbnail_df,
             column_config={
                 "썸네일": st.column_config.ImageColumn(width="medium"),
                 "채널명": st.column_config.Column(width="small"),
