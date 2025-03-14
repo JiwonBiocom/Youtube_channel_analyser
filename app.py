@@ -226,7 +226,8 @@ with tab_channel:
     st.subheader("채널 분석")
     channel_url = st.text_input("유튜브 채널 주소 (e.g., https://youtube.com/@channelname)")
     keyword = st.text_input("동영상 제작에 사용할 키워드를 입력하세요")
-    submit_button = st.button("데이터 수집 및 저장", type="primary")
+    st.info("👆 입력한 키워드에 대한 유튜브 콘텐츠를 제작할 때 채널 정보를 참고하여 만드는데 쓰입니다.")
+    submit_button = st.button("채널 데이터 수집 시작", type="primary")
 
     if submit_button and channel_url and keyword:
         try:
@@ -357,7 +358,7 @@ with tab_channel:
             )
             
             # ID 선택에 도움이 되는 정보 추가
-            st.info("👆 위 목록에서 상세 분석하고 싶은 검색ID를 확인하고, 아래에 입력하세요.")
+            st.info("👆 위 목록에서 상세 분석하고 싶은 채널의 pk_ID를 확인하고, 아래에 입력하세요. 그리고 분석 시작 버튼을 누르세요.")
         else:
             st.warning("저장된 채널 데이터가 없습니다.")
     except Exception as e:
@@ -365,7 +366,7 @@ with tab_channel:
     
     # 특정 채널 상세 분석 섹션
     st.subheader("특정 검색ID 상세 분석")
-    search_id_input = st.number_input("분석할 검색 ID를 입력하세요", min_value=1, step=1)
+    search_id_input = st.number_input("채널에 대해 분석할 pk_ID를 입력하세요", min_value=1, step=1)
     
     # 검색 버튼 콜백
     def on_search_click_channel():
@@ -386,7 +387,7 @@ with tab_channel:
     def on_analyze_longform_click_channel():
         st.session_state.longform_analyzed_channel = True
     
-    search_button = st.button("검색", type="primary", key="search_button_tab3", on_click=on_search_click_channel)
+    search_button = st.button("분석 시작", type="primary", key="search_button_tab3", on_click=on_search_click_channel)
     
     # 검색 결과 표시
     if st.session_state.search_clicked_channel:
@@ -704,7 +705,7 @@ with tab_keyword:
             )
             
             # ID 선택에 도움이 되는 정보 추가
-            st.info("👆 위 목록에서 상세 분석하고 싶은 검색ID를 확인하고, 아래에 입력하세요.")
+            st.info("👆 위 목록에서 상세 분석하고 싶은 키워드의 pk_ID를 확인하고, 아래에 입력하세요. 그리고 분석 버튼을 누르세요.")
         else:
             st.warning("저장된 채널 데이터가 없습니다.")
     except Exception as e:
@@ -712,7 +713,7 @@ with tab_keyword:
     
     # 특정 채널 상세 분석 섹션
     st.subheader("특정 검색ID 상세 분석")
-    search_id_input = st.number_input("키워드에 대해 조회할 검색 ID를 입력하세요", min_value=1, step=1)
+    search_id_input = st.number_input("키워드에 대해 분석할 pk_ID를 입력하세요", min_value=1, step=1)
     
     # 검색 버튼 콜백
     def on_search_click_tab4():
@@ -733,7 +734,7 @@ with tab_keyword:
     def on_analyze_longform_click_tab4():
         st.session_state.longform_analyzed_tab4 = True
     
-    search_button_keyword = st.button("검색", type="primary", key="search_button_keyword_tab4", on_click=on_search_click_tab4)
+    search_button_keyword = st.button("분석 시작", type="primary", key="search_button_keyword_tab4", on_click=on_search_click_tab4)
     
     # 검색 결과 표시
     if st.session_state.search_clicked_tab4:
@@ -935,7 +936,7 @@ with tab_blog:
             )
             # 입력 후 세션 상태 업데이트
             st.session_state.blog_urls[i] = st.session_state[f"blog_url_{i}"]
-    
+
     # 유효한 URL의 수 계산 (빈 문자열이 아닌 URL)
     valid_urls = [url for url in st.session_state.blog_urls if url.strip()]
     
@@ -1968,6 +1969,7 @@ with tab_content:
 
 # 분석 내용 확인하기 탭
 with tab_analysis:
+    st.info("지금까지 분석한 유튜브 채널 및 키워드, 썸네일 이미지에 대한 정보를 조회하는 공간입니다.")
     try:
         # 채널 분석 내용 정리
         st.subheader("채널 정리")
