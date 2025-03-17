@@ -196,7 +196,21 @@ def save_video_analysis(table_name, search_unique_id, is_shorts, analysis_result
     cur = conn.cursor()
     
     cur.execute(f"""
-        INSERT INTO {table_name} (search_unique_id, is_shorts, llm_analysis) VALUES (%s, %s, %s)
+        INSERT INTO {table_name} (search_unique_id, is_shorts, channel_result) VALUES (%s, %s, %s)
+        """,
+        (search_unique_id, is_shorts, analysis_result)
+    )
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def save_video_analysis_keyword(table_name, search_unique_id, is_shorts, analysis_result):
+    conn = connect_postgres()
+    cur = conn.cursor()
+    
+    cur.execute(f"""
+        INSERT INTO {table_name} (search_unique_id, is_shorts, keyword_result) VALUES (%s, %s, %s)
         """,
         (search_unique_id, is_shorts, analysis_result)
     )
@@ -213,7 +227,7 @@ def save_thumbnail_analysis(thumbnail_data, search_unique_id, is_shorts, url):
     for item in thumbnail_data:
         cur.execute("""
             INSERT INTO thumbnail_analysis 
-            (search_unique_id, keyword, channel_url, channel_name, video_id, video_title, video_thumbnail, is_shorts, thumbnail_analysis)
+            (search_unique_id, keyword, channel_url, channel_name, video_id, video_title, video_thumbnail, is_shorts, thumbnail_result)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (search_unique_id, item['키워드'], url, item['채널명'], item['video_id'], item['제목'], item['썸네일'], is_shorts, item['분석'])
