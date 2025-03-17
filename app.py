@@ -443,11 +443,6 @@ with tab_channel:
                     if st.button(f"📊 ID {search_id} 분석", key=f"analyze_btn_{search_id}", help=f"ID {search_id} 분석"):
                         analyze_channel(search_id)
             
-            # # 각 행에 분석 버튼 추가를 위한 버튼 열 생성
-            # top_videos_df['분석'] = top_videos_df['pk_ID'].apply(
-            #     lambda x: f'<button key="analyze_{x}">분석</button>'
-            # )
-            
             with col_table:
                 # 데이터프레임 표시 (버튼 열 포함)
                 st.dataframe(
@@ -474,33 +469,13 @@ with tab_channel:
                     height=300
                 )
             
-            # # 각 행에 분석 버튼 추가 (대안적 방법)
-            # for _, row in top_videos_df.iterrows():
-            #     search_id = row['pk_ID']
-            #     if st.button(f"분석 ID: {search_id}", key=f"btn_analyze_channel_{search_id}"):
-            #         analyze_channel(search_id)
-            
             # 도움말 메시지 수정
             st.info("👆 위 목록에서 분석하고 싶은 채널의 '분석' 버튼을 클릭하세요.")
         else:
             st.warning("저장된 채널 데이터가 없습니다.")
     except Exception as e:
         st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
-    
-    # # 특정 채널 상세 분석 섹션
-    # st.subheader("특정 검색ID 상세 분석")
-    # search_id_input = st.number_input("채널에 대해 분석할 pk_ID를 입력하세요", min_value=1, step=1)
-    
-    # # 검색 버튼 콜백
-    # def on_search_click_channel():
-    #     st.session_state.search_clicked_channel = True
-    #     st.session_state.shorts_analyzed_channel = False
-    #     st.session_state.longform_analyzed_channel = False
-    #     st.session_state.shorts_analysis_result_channel = None
-    #     st.session_state.longform_analysis_result_channel = None
-    #     st.session_state.shorts_thumbnail_analysis_channel = None  # 추가
-    #     st.session_state.longform_thumbnail_analysis_channel = None  # 추가
-    #     st.session_state.found_data_channel = None  # 새 검색 시 데이터 초기화
+
     
     # 쇼츠 분석 버튼 콜백
     def on_analyze_shorts_click_channel():
@@ -1167,11 +1142,6 @@ with tab_keyword:
                     search_id = row['pk_ID']
                     if st.button(f"📊 ID {search_id} 분석", key=f"btn_analyze_keyword_{search_id}"):
                         analyze_keyword(search_id)
-            
-            # # 각 행에 분석 버튼 추가를 위한 버튼 열 생성
-            # top_videos_df['분석'] = top_videos_df['pk_ID'].apply(
-            #     lambda x: f'<button key="analyze_{x}">분석</button>'
-            # )
 
             # 데이터 표시
             with col_table:
@@ -1197,22 +1167,7 @@ with tab_keyword:
             st.warning("저장된 채널 데이터가 없습니다.")
     except Exception as e:
         st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
-    
-    # # 특정 채널 상세 분석 섹션
-    # st.subheader("특정 검색ID 상세 분석")
-    # search_id_input = st.number_input("키워드에 대해 분석할 pk_ID를 입력하세요", min_value=1, step=1)
-    
-    # # 검색 버튼 콜백
-    # def on_search_click_tab4():
-    #     st.session_state.search_clicked_tab4 = True
-    #     st.session_state.shorts_analyzed_tab4 = False
-    #     st.session_state.longform_analyzed_tab4 = False
-    #     st.session_state.shorts_analysis_result_tab4 = None
-    #     st.session_state.longform_analysis_result_tab4 = None
-    #     st.session_state.shorts_thumbnail_analysis_tab4 = None  # 추가
-    #     st.session_state.longform_thumbnail_analysis_tab4 = None  # 추가
-    #     st.session_state.found_data_tab4 = None  # 새 검색 시 데이터 초기화
-        
+
     # 쇼츠 분석 버튼 콜백
     def on_analyze_shorts_click_keyword():
         st.session_state.shorts_analyzed_keyword = True
@@ -1295,7 +1250,7 @@ with tab_keyword:
                     st.write("### 쇼츠 영상 분석")
                     
                     if len(shorts_df) == 0:
-                        st.info("해당 채널에는 쇼츠가 없습니다.")
+                        st.info("해당 키워드에 대한 쇼츠 결과가 없습니다.")
                     else:
                         # 쇼츠 분석 버튼
                         if not st.session_state.shorts_analyzed_keyword:
@@ -1457,7 +1412,7 @@ with tab_keyword:
                     st.write("### 롱폼 영상 분석")
                     
                     if len(longform_df) == 0:
-                        st.info("해당 채널에는 롱폼이 없습니다.")
+                        st.info("해당 키워드에 대한 롱폼 결과가 없습니다.")
                     else:
                         # 롱폼 분석 버튼
                         if not st.session_state.longform_analyzed_keyword:
@@ -1785,6 +1740,7 @@ with tab_blog:
     st.subheader("블로그 통합 분석")
 
     st.info("키워드별 블로그 중 첫 번째 블로그에 대한 요약 내용입니다.")
+    
     # 모든 키워드별 블로그 요약 데이터 조회
     try:
         conn = connect_postgres()
@@ -1840,7 +1796,7 @@ with tab_blog:
                 # 선택한 ID의 요약 내용 표시
                 selected_summary = next((s for s_id, k, s, u in keyword_summaries if s_id == selected_id), None)
                 if selected_summary:
-                    with st.expander("블로그 요약 전체 내용", expanded=True):
+                    with st.expander("블로그 요약 내용", expanded=True):
                         st.markdown(selected_summary)
 
         else:
@@ -3013,7 +2969,7 @@ with tab_content:
 
 # 분석 내용 확인하기 탭
 with tab_analysis:
-    st.info("지금까지 분석한 유튜브 채널 및 키워드, 썸네일 이미지에 대한 정보를 조회하는 공간입니다.")
+    st.info("지금까지 분석한 썸네일 이미지에 대한 정보를 조회하는 공간입니다.")
     try:
         st.subheader("썸네일 분석 결과")
         
