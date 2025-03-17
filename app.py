@@ -443,6 +443,11 @@ with tab_channel:
                     if st.button(f"📊 ID {search_id} 분석", key=f"analyze_btn_{search_id}", help=f"ID {search_id} 분석"):
                         analyze_channel(search_id)
             
+            # # 각 행에 분석 버튼 추가를 위한 버튼 열 생성
+            # top_videos_df['분석'] = top_videos_df['pk_ID'].apply(
+            #     lambda x: f'<button key="analyze_{x}">분석</button>'
+            # )
+            
             with col_table:
                 # 데이터프레임 표시 (버튼 열 포함)
                 st.dataframe(
@@ -469,13 +474,33 @@ with tab_channel:
                     height=300
                 )
             
+            # # 각 행에 분석 버튼 추가 (대안적 방법)
+            # for _, row in top_videos_df.iterrows():
+            #     search_id = row['pk_ID']
+            #     if st.button(f"분석 ID: {search_id}", key=f"btn_analyze_channel_{search_id}"):
+            #         analyze_channel(search_id)
+            
             # 도움말 메시지 수정
             st.info("👆 위 목록에서 분석하고 싶은 채널의 '분석' 버튼을 클릭하세요.")
         else:
             st.warning("저장된 채널 데이터가 없습니다.")
     except Exception as e:
         st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
-
+    
+    # # 특정 채널 상세 분석 섹션
+    # st.subheader("특정 검색ID 상세 분석")
+    # search_id_input = st.number_input("채널에 대해 분석할 pk_ID를 입력하세요", min_value=1, step=1)
+    
+    # # 검색 버튼 콜백
+    # def on_search_click_channel():
+    #     st.session_state.search_clicked_channel = True
+    #     st.session_state.shorts_analyzed_channel = False
+    #     st.session_state.longform_analyzed_channel = False
+    #     st.session_state.shorts_analysis_result_channel = None
+    #     st.session_state.longform_analysis_result_channel = None
+    #     st.session_state.shorts_thumbnail_analysis_channel = None  # 추가
+    #     st.session_state.longform_thumbnail_analysis_channel = None  # 추가
+    #     st.session_state.found_data_channel = None  # 새 검색 시 데이터 초기화
     
     # 쇼츠 분석 버튼 콜백
     def on_analyze_shorts_click_channel():
@@ -943,14 +968,14 @@ with tab_keyword:
             if count > 0:
                 st.session_state.keyword_status = 'confirm_needed'
             else:
-                st.session_status.keyword_status = 'confirmed'
+                st.session_state.keyword_status = 'confirmed'
             
             st.rerun()
         
         except Exception as e:
-            st.warning("키워드를 입력하세요")
+            st.error(f"에러가 발생했습니다: {str(e)}")
     elif search_button:
-        st.error(f"에러가 발생했습니다: {str(e)}")
+        st.warning("키워드를 입력하세요")
 
     
     if st.session_state.keyword_status == 'confirm_needed':
@@ -1069,6 +1094,7 @@ with tab_keyword:
                 top_videos['subscribers'] = top_videos['subscribers'].apply(lambda x: format_to_10k(x) + " 명")
                 top_videos['view_sub_ratio'] = top_videos['view_sub_ratio'].apply(lambda x: f"{round(x)}%")
                 top_videos['thumbnail'] = top_videos.apply(lambda x: f'<a href="{x["url"]}" target="_blank"><img src="{x["thumbnail"]}" width="240"/></a>', axis=1)
+                
                 display_videos = top_videos[['thumbnail', 'title', 'channel', 'views', 'subscribers', 'view_sub_ratio', 'is_shorts', '1min_script']]
                 display_videos.columns = ['썸네일', '제목', '채널명', '조회수', '구독자수', '조회수/구독자 비율', '쇼츠', '최초 3분 스크립트']
                 display_videos['쇼츠'] = display_videos['쇼츠'].map({True: '쇼츠', False: '롱폼'})
@@ -1111,7 +1137,7 @@ with tab_keyword:
                 
     # ID 선택에 도움이 되는 정보 추가
     st.info("아래 목록에서 분석하고 싶은 키워드의 '분석' 버튼을 클릭하세요.")
-    
+    #
     try:
         top_videos_df = get_top_videos_by_search_id('keyword_info')
         
@@ -1142,6 +1168,11 @@ with tab_keyword:
                     search_id = row['pk_ID']
                     if st.button(f"📊 ID {search_id} 분석", key=f"btn_analyze_keyword_{search_id}"):
                         analyze_keyword(search_id)
+            
+            # 각 행에 분석 버튼 추가를 위한 버튼 열 생성
+            top_videos_df['분석'] = top_videos_df['pk_ID'].apply(
+                lambda x: f'<button key="analyze_{x}">분석</button>'
+            )
 
             # 데이터 표시
             with col_table:
@@ -1163,11 +1194,45 @@ with tab_keyword:
                     use_container_width=True,
                     height=300
                 )
+
+                # top_vids = top_videos_df.copy()
+
+                # # '분석' 열을 버튼 텍스트로 채우기
+                # top_vids['분석'] = ''
+
+                # # 각 행에 대해 버튼을 생성하고, 클릭 시 분석 실행
+                # for index, row in top_vids.iterrows():
+                #     # 버튼을 각 행에 맞게 출력
+                #     if st.button(f"📊 ID {row['pk_ID']} 분석", key=f"btn_analyze_keyword_{row['pk_ID']}"):
+                #         analyze_keyword(row['pk_ID'])  # 버튼 클릭 시 분석 함수 호출
+                #         top_vids['분석'] = f"📊 ID {row['pk_ID']} 분석"
+
+                # # 버튼이 포함된 데이터프레임을 HTML로 변환하여 표시
+                # display = top_vids[['분석', 'pk_ID', '키워드', '채널명', '제목', '조회수', '조회수/구독자 비율', '쇼츠']]
+
+                # # 테이블을 HTML로 렌더링하여 표시
+                # st.markdown(display.to_html(escape=False, index=False), unsafe_allow_html=True)
         else:
             st.warning("저장된 채널 데이터가 없습니다.")
     except Exception as e:
         st.error(f"데이터 조회 중 오류가 발생했습니다: {str(e)}")
+    #
 
+    # # 특정 채널 상세 분석 섹션
+    # st.subheader("특정 검색ID 상세 분석")
+    # search_id_input = st.number_input("키워드에 대해 분석할 pk_ID를 입력하세요", min_value=1, step=1)
+    
+    # # 검색 버튼 콜백
+    # def on_search_click_tab4():
+    #     st.session_state.search_clicked_tab4 = True
+    #     st.session_state.shorts_analyzed_tab4 = False
+    #     st.session_state.longform_analyzed_tab4 = False
+    #     st.session_state.shorts_analysis_result_tab4 = None
+    #     st.session_state.longform_analysis_result_tab4 = None
+    #     st.session_state.shorts_thumbnail_analysis_tab4 = None  # 추가
+    #     st.session_state.longform_thumbnail_analysis_tab4 = None  # 추가
+    #     st.session_state.found_data_tab4 = None  # 새 검색 시 데이터 초기화
+        
     # 쇼츠 분석 버튼 콜백
     def on_analyze_shorts_click_keyword():
         st.session_state.shorts_analyzed_keyword = True
@@ -2729,243 +2794,240 @@ with tab_content:
     st.subheader("콘텐츠 평가하기")
     
     # 유튜브 콘텐츠 평가
-    st.subheader("유튜브 콘텐츠 품질 평가")
-    
-    try:
-        conn = connect_postgres()
-        cur = conn.cursor()
-        
-        # 모든 유튜브 콘텐츠 조회
-        cur.execute("""
-        SELECT id, keyword, title, thumbnail, script 
-        FROM youtube_content 
-        ORDER BY created_at DESC
-        """)
-        
-        youtube_contents = cur.fetchall()
-        cur.close()
-        conn.close()
-        
-        if youtube_contents:
-            df_contents = pd.DataFrame(youtube_contents, columns=['ID', '키워드', '제목', '썸네일', '스크립트'])
-            st.dataframe(
-                df_contents,
-                column_config={
-                    "ID": st.column_config.Column(width="small"),
-                    "키워드": st.column_config.Column(width="small"),
-                    "제목": st.column_config.Column(width="large"),
-                    "썸네일": st.column_config.Column(width="large"),
-                    "스크립트": st.column_config.Column(width="large"),
-                },
-                hide_index=True,
-                use_container_width=True
-            )
-        else:
-            st.info("평가할 유튜브 콘텐츠가 없습니다. 먼저 콘텐츠를 생성해주세요.")
-            
-    except Exception as e:
-        st.error(f"유튜브 콘텐츠 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
-
-    content_id_yt = st.number_input("평가할 콘텐츠 ID를 입력하세요", min_value=1, step=1)
-    feedback_score_yt = st.slider("이 유튜브 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
-    feedback_text_yt = st.text_area("이 유튜브 콘텐츠의 개선 사항이나 추가 의견이 있다면 알려주세요")
-    submit_feedback_yt = st.button("피드백 제출", key="submit_youtube")
-
-    if submit_feedback_yt and feedback_score_yt and feedback_text_yt and content_id_yt:
-        # 데이터베이스에서 해당 ID의 콘텐츠 정보 가져오기
+    with st.expander("유튜브 콘텐츠 품질 평가"):
+        st.subheader("유튜브 콘텐츠 품질 평가")
         try:
             conn = connect_postgres()
             cur = conn.cursor()
             
+            # 모든 유튜브 콘텐츠 조회
             cur.execute("""
-            SELECT title, thumbnail, script
-            FROM youtube_content
-            WHERE id = %s
-            """, (content_id_yt,))
+            SELECT id, keyword, title, thumbnail, script 
+            FROM youtube_content 
+            ORDER BY created_at DESC
+            """)
             
-            content_info = cur.fetchone()
+            youtube_contents = cur.fetchall()
             cur.close()
             conn.close()
             
-            if content_info:
-                title, thumbnail, script = content_info
-                
-                # 피드백 저장
-                success = save_feedback_yt(content_id_yt, title, thumbnail, script, feedback_score_yt, feedback_text_yt, "YouTube")
-
-                if success:
-                    st.success(f"콘텐츠 ID {content_id_yt}에 대한 피드백이 성공적으로 저장되었습니다!")
+            if youtube_contents:
+                df_contents = pd.DataFrame(youtube_contents, columns=['ID', '키워드', '제목', '썸네일', '스크립트'])
+                st.dataframe(
+                    df_contents,
+                    column_config={
+                        "ID": st.column_config.Column(width="small"),
+                        "키워드": st.column_config.Column(width="small"),
+                        "제목": st.column_config.Column(width="large"),
+                        "썸네일": st.column_config.Column(width="large"),
+                        "스크립트": st.column_config.Column(width="large"),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
             else:
-                st.error(f"ID {content_id_yt}에 해당하는 콘텐츠를 찾을 수 없습니다.")
+                st.info("평가할 유튜브 콘텐츠가 없습니다. 먼저 콘텐츠를 생성해주세요.")
                 
         except Exception as e:
-            st.error(f"콘텐츠 정보를 가져오는 중 오류가 발생했습니다: {str(e)}")
-    elif submit_feedback_yt:
-        if not content_id_yt:
-            st.warning("평가할 콘텐츠 ID를 입력해주세요.")
-        elif not feedback_text_yt:
-            st.warning("개선 사항이나 의견을 입력해주세요.")
+            st.error(f"유튜브 콘텐츠 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
 
-    st.markdown("---")
+        content_id_yt = st.number_input("평가할 콘텐츠 ID를 입력하세요", min_value=1, step=1)
+        feedback_score_yt = st.slider("이 유튜브 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
+        feedback_text_yt = st.text_area("이 유튜브 콘텐츠의 개선 사항이나 추가 의견이 있다면 알려주세요")
+        submit_feedback_yt = st.button("피드백 제출", key="submit_youtube")
+
+        if submit_feedback_yt and feedback_score_yt and feedback_text_yt and content_id_yt:
+            # 데이터베이스에서 해당 ID의 콘텐츠 정보 가져오기
+            try:
+                conn = connect_postgres()
+                cur = conn.cursor()
+                
+                cur.execute("""
+                SELECT title, thumbnail, script
+                FROM youtube_content
+                WHERE id = %s
+                """, (content_id_yt,))
+                
+                content_info = cur.fetchone()
+                cur.close()
+                conn.close()
+                
+                if content_info:
+                    title, thumbnail, script = content_info
+                    
+                    # 피드백 저장
+                    success = save_feedback_yt(content_id_yt, title, thumbnail, script, feedback_score_yt, feedback_text_yt, "YouTube")
+
+                    if success:
+                        st.success(f"콘텐츠 ID {content_id_yt}에 대한 피드백이 성공적으로 저장되었습니다!")
+                else:
+                    st.error(f"ID {content_id_yt}에 해당하는 콘텐츠를 찾을 수 없습니다.")
+                    
+            except Exception as e:
+                st.error(f"콘텐츠 정보를 가져오는 중 오류가 발생했습니다: {str(e)}")
+        elif submit_feedback_yt:
+            if not content_id_yt:
+                st.warning("평가할 콘텐츠 ID를 입력해주세요.")
+            elif not feedback_text_yt:
+                st.warning("개선 사항이나 의견을 입력해주세요.")
 
     # 인스타그램 콘텐츠 평가
-    st.subheader("인스타그램 콘텐츠 품질 평가")
-    
-    # 모든 인스타그램 콘텐츠 조회
-    try:
-        conn = connect_postgres()
-        cur = conn.cursor()
+    with st.expander("인스타그램 콘텐츠 품질 평가"):
+        st.subheader("인스타그램 콘텐츠 품질 평가")
         
         # 모든 인스타그램 콘텐츠 조회
-        cur.execute("""
-        SELECT id, keyword, pics, caption, hashtags 
-        FROM instagram_content 
-        ORDER BY created_at DESC
-        """)
-        
-        instagram_contents = cur.fetchall()
-        cur.close()
-        conn.close()
-        
-        if instagram_contents:
-            df_contents = pd.DataFrame(instagram_contents, columns=['ID', '키워드', '사진', '설명', '해시 태그'])
-            st.dataframe(
-                df_contents,
-                column_config={
-                    "ID": st.column_config.Column(width="small"),
-                    "키워드": st.column_config.Column(width="small"),
-                    "사진": st.column_config.Column(width="large"),
-                    "설명": st.column_config.Column(width="large"),
-                    "해시 태그": st.column_config.Column(width="large"),
-                },
-                hide_index=True,
-                use_container_width=True
-            )
-        else:
-            st.info("평가할 인스타그램 콘텐츠가 없습니다. 먼저 콘텐츠를 생성해주세요.")
-            
-    except Exception as e:
-        st.error(f"인스타그램 콘텐츠 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
-    
-    content_id_ig = st.number_input("평가할 인스타 콘텐츠 ID를 입력하세요", min_value=1, step=1)
-    feedback_score_ig = st.slider("이 인스타그램 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
-    feedback_text_ig = st.text_area("이 인스타그램 개선 사항이나 추가 의견이 있다면 알려주세요")
-    submit_feedback_ig = st.button("인스타 피드백 제출", key="submit_instagram")
-    
-    if submit_feedback_ig and feedback_score_ig and feedback_text_ig and content_id_ig:
-        # 데이터베이스에서 해당 ID의 콘텐츠 정보 가져오기
         try:
             conn = connect_postgres()
             cur = conn.cursor()
             
+            # 모든 인스타그램 콘텐츠 조회
             cur.execute("""
-            SELECT pics, caption, hashtags
-            FROM instagram_content
-            WHERE id = %s
-            """, (content_id_ig,))
+            SELECT id, keyword, pics, caption, hashtags 
+            FROM instagram_content 
+            ORDER BY created_at DESC
+            """)
             
-            content_info = cur.fetchone()
+            instagram_contents = cur.fetchall()
             cur.close()
             conn.close()
             
-            if content_info:
-                pics, caption, hashtags = content_info
-                
-                # 피드백 저장
-                success = save_feedback_ig(content_id_ig, pics, caption, hashtags, feedback_score_ig, feedback_text_ig)
-
-                if success:
-                    st.success(f"콘텐츠 ID {content_id_ig}에 대한 인스타그램 피드백이 성공적으로 저장되었습니다!")
+            if instagram_contents:
+                df_contents = pd.DataFrame(instagram_contents, columns=['ID', '키워드', '사진', '설명', '해시 태그'])
+                st.dataframe(
+                    df_contents,
+                    column_config={
+                        "ID": st.column_config.Column(width="small"),
+                        "키워드": st.column_config.Column(width="small"),
+                        "사진": st.column_config.Column(width="large"),
+                        "설명": st.column_config.Column(width="large"),
+                        "해시 태그": st.column_config.Column(width="large"),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
             else:
-                st.error(f"ID {content_id_ig}에 해당하는 인스타그램 콘텐츠를 찾을 수 없습니다.")
+                st.info("평가할 인스타그램 콘텐츠가 없습니다. 먼저 콘텐츠를 생성해주세요.")
                 
         except Exception as e:
-            st.error(f"콘텐츠 정보를 가져오는 중 오류가 발생했습니다: {str(e)}")
-    elif submit_feedback_ig:
-        if not content_id_ig:
-            st.warning("평가할 인스타그램 콘텐츠 ID를 입력해주세요.")
-        elif not feedback_text_ig:
-            st.warning("개선 사항이나 의견을 입력해주세요.")
-    
-    st.markdown("---")
+            st.error(f"인스타그램 콘텐츠 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
+        
+        content_id_ig = st.number_input("평가할 인스타 콘텐츠 ID를 입력하세요", min_value=1, step=1)
+        feedback_score_ig = st.slider("이 인스타그램 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
+        feedback_text_ig = st.text_area("이 인스타그램 개선 사항이나 추가 의견이 있다면 알려주세요")
+        submit_feedback_ig = st.button("인스타 피드백 제출", key="submit_instagram")
+        
+        if submit_feedback_ig and feedback_score_ig and feedback_text_ig and content_id_ig:
+            # 데이터베이스에서 해당 ID의 콘텐츠 정보 가져오기
+            try:
+                conn = connect_postgres()
+                cur = conn.cursor()
+                
+                cur.execute("""
+                SELECT pics, caption, hashtags
+                FROM instagram_content
+                WHERE id = %s
+                """, (content_id_ig,))
+                
+                content_info = cur.fetchone()
+                cur.close()
+                conn.close()
+                
+                if content_info:
+                    pics, caption, hashtags = content_info
+                    
+                    # 피드백 저장
+                    success = save_feedback_ig(content_id_ig, pics, caption, hashtags, feedback_score_ig, feedback_text_ig)
 
+                    if success:
+                        st.success(f"콘텐츠 ID {content_id_ig}에 대한 인스타그램 피드백이 성공적으로 저장되었습니다!")
+                else:
+                    st.error(f"ID {content_id_ig}에 해당하는 인스타그램 콘텐츠를 찾을 수 없습니다.")
+                    
+            except Exception as e:
+                st.error(f"콘텐츠 정보를 가져오는 중 오류가 발생했습니다: {str(e)}")
+        elif submit_feedback_ig:
+            if not content_id_ig:
+                st.warning("평가할 인스타그램 콘텐츠 ID를 입력해주세요.")
+            elif not feedback_text_ig:
+                st.warning("개선 사항이나 의견을 입력해주세요.")
+    
     # 쓰레드 콘텐츠 평가
-    st.subheader("스레드 콘텐츠 품질 평가")
-    
-    try:
-        conn = connect_postgres()
-        cur = conn.cursor()
-        
-        # 모든 인스타그램 콘텐츠 조회
-        cur.execute("""
-        SELECT id, keyword, post, pics, tags 
-        FROM threads_content 
-        ORDER BY created_at DESC
-        """)
-        
-        threads_contents = cur.fetchall()
-        cur.close()
-        conn.close()
-        
-        if threads_contents:
-            df_contents = pd.DataFrame(threads_contents, columns=['ID', '키워드', '게시글', '사진', '태그'])
-            st.dataframe(
-                df_contents,
-                column_config={
-                    "ID": st.column_config.Column(width="small"),
-                    "키워드": st.column_config.Column(width="small"),
-                    "게시글": st.column_config.Column(width="large"),
-                    "사진": st.column_config.Column(width="large"),
-                    "태그": st.column_config.Column(width="large"),
-                },
-                hide_index=True,
-                use_container_width=True
-            )
-        else:
-            st.info("평가할 스레드 콘텐츠가 없습니다. 먼저 콘텐츠를 생성해주세요.")
-            
-    except Exception as e:
-        st.error(f"스레드 콘텐츠 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
-    
-    content_id_th = st.number_input("평가할 스레드 콘텐츠 ID를 입력하세요", min_value=1, step=1)
-    feedback_score_th = st.slider("이 스레드 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
-    feedback_text_th = st.text_area("이 스레드 콘텐츠의 개선 사항이나 추가 의견이 있다면 알려주세요")
-    submit_feedback_th = st.button("스레드 피드백 제출", key="submit_threads")
-
-    if submit_feedback_th and feedback_score_th and feedback_text_th and content_id_th:
-        # 데이터베이스에서 해당 ID의 콘텐츠 정보 가져오기
+    with st.expander("스레드 콘텐츠 품질 평가"):
+        st.subheader("스레드 콘텐츠 품질 평가")
         try:
             conn = connect_postgres()
             cur = conn.cursor()
             
+            # 모든 인스타그램 콘텐츠 조회
             cur.execute("""
-            SELECT post, pics, tags
-            FROM threads_content
-            WHERE id = %s
-            """, (content_id_th,))
+            SELECT id, keyword, post, pics, tags 
+            FROM threads_content 
+            ORDER BY created_at DESC
+            """)
             
-            content_info = cur.fetchone()
+            threads_contents = cur.fetchall()
             cur.close()
             conn.close()
             
-            if content_info:
-                post, pics, tags = content_info
-                
-                # 피드백 저장
-                success = save_feedback_th(content_id_th, post, pics, tags, feedback_score_th, feedback_text_th)
-
-                if success:
-                    st.success(f"콘텐츠 ID {content_id_th}에 대한 쓰레드 피드백이 성공적으로 저장되었습니다!")
+            if threads_contents:
+                df_contents = pd.DataFrame(threads_contents, columns=['ID', '키워드', '게시글', '사진', '태그'])
+                st.dataframe(
+                    df_contents,
+                    column_config={
+                        "ID": st.column_config.Column(width="small"),
+                        "키워드": st.column_config.Column(width="small"),
+                        "게시글": st.column_config.Column(width="large"),
+                        "사진": st.column_config.Column(width="large"),
+                        "태그": st.column_config.Column(width="large"),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
             else:
-                st.error(f"ID {content_id_th}에 해당하는 쓰레드 콘텐츠를 찾을 수 없습니다.")
+                st.info("평가할 스레드 콘텐츠가 없습니다. 먼저 콘텐츠를 생성해주세요.")
                 
         except Exception as e:
-            st.error(f"콘텐츠 정보를 가져오는 중 오류가 발생했습니다: {str(e)}")
-    elif submit_feedback_th:
-        if not content_id_th:
-            st.warning("평가할 쓰레드 콘텐츠 ID를 입력해주세요.")
-        elif not feedback_text_th:
-            st.warning("개선 사항이나 의견을 입력해주세요.")
+            st.error(f"스레드 콘텐츠 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
+        
+        content_id_th = st.number_input("평가할 스레드 콘텐츠 ID를 입력하세요", min_value=1, step=1)
+        feedback_score_th = st.slider("이 스레드 콘텐츠의 품질을 평가해주세요", 1, 10, 7)
+        feedback_text_th = st.text_area("이 스레드 콘텐츠의 개선 사항이나 추가 의견이 있다면 알려주세요")
+        submit_feedback_th = st.button("스레드 피드백 제출", key="submit_threads")
+
+        if submit_feedback_th and feedback_score_th and feedback_text_th and content_id_th:
+            # 데이터베이스에서 해당 ID의 콘텐츠 정보 가져오기
+            try:
+                conn = connect_postgres()
+                cur = conn.cursor()
+                
+                cur.execute("""
+                SELECT post, pics, tags
+                FROM threads_content
+                WHERE id = %s
+                """, (content_id_th,))
+                
+                content_info = cur.fetchone()
+                cur.close()
+                conn.close()
+                
+                if content_info:
+                    post, pics, tags = content_info
+                    
+                    # 피드백 저장
+                    success = save_feedback_th(content_id_th, post, pics, tags, feedback_score_th, feedback_text_th)
+
+                    if success:
+                        st.success(f"콘텐츠 ID {content_id_th}에 대한 쓰레드 피드백이 성공적으로 저장되었습니다!")
+                else:
+                    st.error(f"ID {content_id_th}에 해당하는 쓰레드 콘텐츠를 찾을 수 없습니다.")
+                    
+            except Exception as e:
+                st.error(f"콘텐츠 정보를 가져오는 중 오류가 발생했습니다: {str(e)}")
+        elif submit_feedback_th:
+            if not content_id_th:
+                st.warning("평가할 쓰레드 콘텐츠 ID를 입력해주세요.")
+            elif not feedback_text_th:
+                st.warning("개선 사항이나 의견을 입력해주세요.")
 
 # 분석 내용 확인하기 탭
 with tab_analysis:
