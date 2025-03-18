@@ -226,7 +226,7 @@ def save_thumbnail_analysis(thumbnail_data, search_unique_id, is_shorts, url):
     
     for item in thumbnail_data:
         cur.execute("""
-            INSERT INTO thumbnail_analysis 
+            INSERT INTO analysis_thumbnail
             (search_unique_id, keyword, channel_url, channel_name, video_id, video_title, video_thumbnail, is_shorts, thumbnail_result)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
