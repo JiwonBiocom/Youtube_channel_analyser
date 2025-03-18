@@ -13,7 +13,7 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 # 커스텀 모듈
 from youtube import is_youtubeshorts, youtube_transcript
 from saveNload import save_info, load_info, fetch_youtube_data, get_top_videos_by_search_id, save_video_analysis, save_video_analysis_keyword, save_thumbnail_analysis
-from extract_blog_content import blog_content
+from blog import blog_content, blog_summarizer
 from analyse_video import analyze_channel_video, analyze_keyword_video, analyze_thumbnails
 from feedback import save_feedback_yt, save_feedback_ig, save_feedback_th
 
@@ -195,31 +195,10 @@ class YouTubeAnalyzer:
             # 댓글이 비활성화된 경우 등의 예외 처리
             return [{'author': '댓글 없음', 'text': '댓글을 가져올 수 없습니다 (비활성화되었거나 접근 불가)', 'like_count': 0, 'published_at': ''}]
 
-def blog_summarizer(client, llm, text):
-    try:
-        # 입력 텍스트가 너무 길 경우 제한 (API 제한을 고려)
-        if len(text) > 15000:
-            text = text[:15000] + "..."
-    
-        summary = client.chat.completions.create(
-            model=llm,  # 'gpt-4o-2024-08-06'
-            messages=[
-                {"role": "system", "content": "다음 블로그 포스트를 명확하고 간결하게 요약해주세요. 핵심 내용과 주요 포인트를 포함시켜야 합니다."},
-                {"role": "user", "content": text}
-            ],
-            temperature=0.3, 
-            max_tokens=500,
-        )
-        
-        return summary.choices[0].message.content.strip()
-    
-    except Exception as e:
-        return {"블로그 내용 요약 중 오류가 발생했습니다.": str(e)}
-
 
 # # 메인 탭 # #
 st.title("유튜브 트렌드 분석기")
-tab_channel, tab_keyword, tab_blog, tab_analysis, tab_content = st.tabs(["채널 분석", "키워드 분석", "블로그 분석", "썸네일 분석 내용 정리", "컨텐츠 생성 및 평가"])
+tab_channel, tab_keyword, tab_blog, tab_result, tab_content = st.tabs(["채널 분석", "키워드 분석", "블로그 요약", "썸네일 분석 내용 정리", "컨텐츠 생성 및 평가"])
 
 # 채널 데이터 탭
 with tab_channel:
@@ -244,7 +223,7 @@ with tab_channel:
             conn = connect_postgres()
             cur = conn.cursor()
 
-            cur.execute("""SELECT COUNT(*) FROM channel_info WHERE channel_url = %s """, (channel_url,))
+            cur.execute("""SELECT COUNT(*) FROM info_channel WHERE channel_url = %s """, (channel_url,))
             count = cur.fetchone()[0]
             
             cur.close()
@@ -285,7 +264,7 @@ with tab_channel:
             
             cur.execute("""
             SELECT search_unique_id, keyword, channel_name, video_title, video_view_subscriber_ratio, is_shorts
-            FROM channel_info 
+            FROM info_channel 
             WHERE channel_url = %s 
             ORDER BY search_unique_id DESC
             """, (st.session_state.current_channel,))
@@ -374,7 +353,7 @@ with tab_channel:
                     comments = analyzer.get_top_comments(video_id, 3)  # 댓글 가져오기
                     
                     save_info(
-                        'channel_info', pk_id, keyword, channel_url, channel_stats['title'], channel_stats['subscribers'], 
+                        'info_channel', pk_id, keyword, channel_url, channel_stats['title'], channel_stats['subscribers'], 
                         video_id, video['title'], video['thumbnail'], video['views'], video['like_count'], video['comment_count'], view_subscriber_ratio,
                         is_shorts, transcript, video['published_at'], comments
                     )
@@ -413,9 +392,22 @@ with tab_channel:
         st.session_state.found_data_channel = None
     
     try:
-        top_videos_df = get_top_videos_by_search_id('channel_info')
+        top_videos_df = get_top_videos_by_search_id('info_channel')
         
         if not top_videos_df.empty:
+            search_keyword = st.text_input("조회할 키워드를 입력하세요.", key='search_keyword_ch')
+            search_channel = st.text_input("조회할 채널명을 입력하세요.", key='search_channel_ch')
+            
+            filtered_df = top_videos_df.copy()
+            
+            # 키워드 필터링
+            if search_keyword:
+                filtered_df = filtered_df[filtered_df['키워드'].str.contains(search_keyword, case=False, na=False)]
+            
+            # 채널명 필터링
+            if search_channel:
+                filtered_df = filtered_df[filtered_df['채널명'].str.contains(search_channel, case=False, na=False)]
+
             # 버튼 동작을 위한 콜백 함수
             def analyze_channel(search_id):
                 st.session_state.search_clicked_channel = True
@@ -426,19 +418,17 @@ with tab_channel:
                 st.session_state.shorts_thumbnail_analysis_channel = None
                 st.session_state.longform_thumbnail_analysis_channel = None
                 st.session_state.found_data_channel = None
-                
-                # 선택한 ID 저장
-                st.session_state.selected_search_id = search_id
+                st.session_state.selected_search_id = search_id  # 선택한 ID 저장
                 
                 # 데이터 로드
-                display_df = load_info(search_id, 'channel_info')
+                display_df = load_info(search_id, 'info_channel')
                 st.session_state.found_data_channel = display_df
             
             # 버튼 열과 데이터프레임을 나란히 배치
             col_buttons, col_table = st.columns([1, 7])
             
             with col_buttons:
-                for _, row in top_videos_df.iterrows():
+                for _, row in filtered_df.iterrows():
                     search_id = row['pk_ID']
                     if st.button(f"📊 ID {search_id} 분석", key=f"analyze_btn_{search_id}", help=f"ID {search_id} 분석"):
                         analyze_channel(search_id)
@@ -451,13 +441,8 @@ with tab_channel:
             with col_table:
                 # 데이터프레임 표시 (버튼 열 포함)
                 st.dataframe(
-                    top_videos_df,
+                    filtered_df,
                     column_config={
-                        # "분석": st.column_config.Column(
-                        #     "분석", 
-                        #     width="small",
-                        #     help="클릭하여 채널 분석 시작"
-                        # ),
                         "썸네일": st.column_config.ImageColumn(width="large", help="영상 썸네일"),
                         "pk_ID": st.column_config.Column(width="small", help="채널 ID"),
                         "키워드": st.column_config.Column(width="medium"),
@@ -471,14 +456,8 @@ with tab_channel:
                     },
                     hide_index=True,
                     use_container_width=True,
-                    height=300
+                    height=300, 
                 )
-            
-            # # 각 행에 분석 버튼 추가 (대안적 방법)
-            # for _, row in top_videos_df.iterrows():
-            #     search_id = row['pk_ID']
-            #     if st.button(f"분석 ID: {search_id}", key=f"btn_analyze_channel_{search_id}"):
-            #         analyze_channel(search_id)
             
             # 도움말 메시지 수정
             st.info("👆 위 목록에서 분석하고 싶은 채널의 '분석' 버튼을 클릭하세요.")
@@ -491,17 +470,6 @@ with tab_channel:
     # st.subheader("특정 검색ID 상세 분석")
     # search_id_input = st.number_input("채널에 대해 분석할 pk_ID를 입력하세요", min_value=1, step=1)
     
-    # # 검색 버튼 콜백
-    # def on_search_click_channel():
-    #     st.session_state.search_clicked_channel = True
-    #     st.session_state.shorts_analyzed_channel = False
-    #     st.session_state.longform_analyzed_channel = False
-    #     st.session_state.shorts_analysis_result_channel = None
-    #     st.session_state.longform_analysis_result_channel = None
-    #     st.session_state.shorts_thumbnail_analysis_channel = None  # 추가
-    #     st.session_state.longform_thumbnail_analysis_channel = None  # 추가
-    #     st.session_state.found_data_channel = None  # 새 검색 시 데이터 초기화
-    
     # 쇼츠 분석 버튼 콜백
     def on_analyze_shorts_click_channel():
         st.session_state.shorts_analyzed_channel = True
@@ -510,7 +478,7 @@ with tab_channel:
     def on_analyze_longform_click_channel():
         st.session_state.longform_analyzed_channel = True
     
-    # search_button = st.button("분석 시작", type="primary", key="search_button_tab3", on_click=on_search_click_channel)
+    # search_button = st.button("분석 시작", type="primary", key="search_button_tab3", on_click=analyze_channel)
     
     if 'selected_search_id' in st.session_state:
         st.subheader(f"선택한 채널 ID {st.session_state.selected_search_id} 분석 결과")
@@ -519,7 +487,7 @@ with tab_channel:
     if st.session_state.search_clicked_channel:
         try:
             if 'found_data_channel' not in st.session_state or st.session_state.found_data_channel is None:
-                display_df = load_info(st.session_state.selected_search_id, 'channel_info')  # display_df = load_info(search_id_input, 'channel_info')
+                display_df = load_info(st.session_state.selected_search_id, 'info_channel')  # display_df = load_info(search_id_input, 'info_channel')
                 st.session_state.found_data_channel = display_df
             else:
                 display_df = st.session_state.found_data_channel
@@ -589,7 +557,7 @@ with tab_channel:
                             shorts_btn = st.button(
                                 "쇼츠 분석 시작", 
                                 type="primary", 
-                                key="btn_analyze_shorts",
+                                key="btn_analyze_shorts_channel",
                                 # on_click=on_analyze_shorts_click_channel
                             )
 
@@ -597,9 +565,9 @@ with tab_channel:
                                 try:
                                     conn = connect_postgres()
                                     cur = conn.cursor()
-                    
+
                                     cur.execute("""
-                                    SELECT COUNT(*) FROM channel_analysis 
+                                    SELECT COUNT(*) FROM analysis_channel
                                     WHERE search_unique_id = %s AND is_shorts = TRUE
                                     """, (st.session_state.selected_search_id,))
                                     
@@ -625,12 +593,12 @@ with tab_channel:
 
                             col1, col2 = st.columns(2)
                             with col1:
-                                if st.button("예", key="confirm_shorts_yes"):
+                                if st.button("예", key="confirm_shorts_yes_ch"):
                                     st.session_state.shorts_analysis_status = 'confirmed'
                                     on_analyze_shorts_click_channel()  # 콜백 함수 호출
                                     st.rerun()
                             with col2:
-                                if st.button("아니오", key="confirm_shorts_no"):
+                                if st.button("아니오", key="confirm_shorts_no_ch"):
                                     st.session_state.shorts_analysis_status = 'show_existing'
                                     st.rerun()
                         
@@ -642,7 +610,7 @@ with tab_channel:
                                 # 이전 분석 결과 가져오기
                                 cur.execute("""
                                 SELECT search_unique_id, channel_result, created_at 
-                                FROM channel_analysis 
+                                FROM analysis_channel 
                                 WHERE search_unique_id = %s AND is_shorts = TRUE
                                 ORDER BY created_at DESC
                                 """, (st.session_state.selected_search_id,))
@@ -666,7 +634,7 @@ with tab_channel:
                                         
                                     #     cur.execute("""
                                     #     SELECT thumbnail_url, thumbnail_analysis 
-                                    #     FROM thumbnail_analysis 
+                                    #     FROM analysis_thumbnail 
                                     #     WHERE search_unique_id = %s AND is_shorts = TRUE
                                     #     ORDER BY created_at DESC LIMIT 3
                                     #     """, (st.session_state.selected_search_id,))
@@ -690,7 +658,7 @@ with tab_channel:
                                     st.info("이 채널에 대한 기존 쇼츠 분석 결과를 찾을 수 없습니다.")
                                 
                                 # 새 분석 시작 버튼
-                                if st.button("새 분석 시작", key="new_shorts_analysis"):
+                                if st.button("새 분석 시작", key="new_shorts_analysis_ch"):
                                     st.session_state.shorts_analysis_status = 'initial'
                                     st.rerun()
                                     
@@ -709,7 +677,7 @@ with tab_channel:
                                     st.session_state.shorts_thumbnail_analysis_channel = thumbnail_analysis_shorts
                                     
                                     # 분석 내용 저장
-                                    save_video_analysis('channel_analysis', st.session_state.selected_search_id, True, shorts_analysis)  # save_video_analysis('channel_analysis', search_id_input, True, shorts_analysis)
+                                    save_video_analysis('analysis_channel', st.session_state.selected_search_id, True, shorts_analysis)  # save_video_analysis('channel_analysis', search_id_input, True, shorts_analysis)
                                     save_thumbnail_analysis(thumbnail_analysis_shorts, st.session_state.selected_search_id, True, display_df['채널URL'].iloc[0])  # save_thumbnail_analysis(thumbnail_analysis_shorts, search_id_input, True, display_df['채널URL'].iloc[0])
                                     
                                     st.success("쇼츠 영상 분석 완료 및 저장되었습니다!")
@@ -761,7 +729,7 @@ with tab_channel:
                                     cur = conn.cursor()
                     
                                     cur.execute("""
-                                    SELECT COUNT(*) FROM channel_analysis 
+                                    SELECT COUNT(*) FROM analysis_channel 
                                     WHERE search_unique_id = %s AND is_shorts = FALSE
                                     """, (st.session_state.selected_search_id,))
                                     
@@ -787,12 +755,12 @@ with tab_channel:
 
                             col1, col2 = st.columns(2)
                             with col1:
-                                if st.button("예", key="confirm_longform_yes"):
+                                if st.button("예", key="confirm_longform_yes_ch"):
                                     st.session_state.longform_analysis_status = 'confirmed'
                                     on_analyze_longform_click_channel()  # 콜백 함수 호출
                                     st.rerun()
                             with col2:
-                                if st.button("아니오", key="confirm_longform_no"):
+                                if st.button("아니오", key="confirm_longform_no_ch"):
                                     st.session_state.longform_analysis_status = 'show_existing'
                                     st.rerun()
                         
@@ -804,7 +772,7 @@ with tab_channel:
                                 # 이전 분석 결과 가져오기
                                 cur.execute("""
                                 SELECT search_unique_id, channel_result, created_at 
-                                FROM channel_analysis 
+                                FROM analysis_channel 
                                 WHERE search_unique_id = %s AND is_shorts = FALSE
                                 ORDER BY created_at DESC
                                 """, (st.session_state.selected_search_id,))
@@ -828,7 +796,7 @@ with tab_channel:
                                         
                                     #     cur.execute("""
                                     #     SELECT thumbnail_url, thumbnail_analysis 
-                                    #     FROM thumbnail_analysis 
+                                    #     FROM analysis_thumbnail 
                                     #     WHERE search_unique_id = %s AND is_shorts = FALSE
                                     #     ORDER BY created_at DESC LIMIT 3
                                     #     """, (st.session_state.selected_search_id,))
@@ -852,7 +820,7 @@ with tab_channel:
                                     st.info("이 채널에 대한 기존 롱폼 분석 결과를 찾을 수 없습니다.")
                                 
                                 # 새 분석 시작 버튼
-                                if st.button("새 분석 시작", key="new_longform_analysis"):
+                                if st.button("새 분석 시작", key="new_longform_analysis_ch"):
                                     st.session_state.longform_analysis_status = 'initial'
                                     st.rerun()
                                     
@@ -871,7 +839,7 @@ with tab_channel:
                                     st.session_state.longform_thumbnail_analysis_channel = thumbnail_analysis_long
 
                                     # 분석 내용 저장
-                                    save_video_analysis('channel_analysis', st.session_state.selected_search_id, False, longform_analysis)  # save_video_analysis('channel_analysis', search_id_input, False, longform_analysis)
+                                    save_video_analysis('analysis_channel', st.session_state.selected_search_id, False, longform_analysis)  # save_video_analysis('channel_analysis', search_id_input, False, longform_analysis)
                                     save_thumbnail_analysis(thumbnail_analysis_long, st.session_state.selected_search_id, False, display_df['채널URL'].iloc[0])  # save_thumbnail_analysis(thumbnail_analysis_long, search_id_input, False, display_df['채널URL'].iloc[0])
                                     
                                     st.success("롱폼 영상 분석 완료 및 저장되었습니다!")
@@ -903,7 +871,7 @@ with tab_channel:
     st.markdown("---")
     
     try:
-        st.subheader("채널 정리")
+        st.subheader("쇼츠, 롱폼 동영상 분석 리스트")
         
         conn = connect_postgres()
         cur = conn.cursor()
@@ -912,7 +880,7 @@ with tab_channel:
         SELECT 
             search_unique_id, is_shorts, channel_result, created_at
         FROM 
-            channel_analysis
+            analysis_channel
         ORDER BY 
             created_at DESC
         """)
@@ -948,7 +916,7 @@ with tab_keyword:
     st.subheader("키워드 분석")
     query = st.text_input("분석하고 싶은 키워드를 입력하세요:")
     max_results = st.slider("분석할 영상 수", 10, 50, 30)
-    search_button = st.button("검색 시작", type="primary")
+    search_button = st.button("검색 시작", type="primary", icon=":material/search:")
 
     if query and search_button:
         st.session_state.current_keyword = query
@@ -958,7 +926,7 @@ with tab_keyword:
             conn = connect_postgres()
             cur = conn.cursor()
 
-            cur.execute("""SELECT COUNT(*) FROM keyword_info WHERE keyword = %s """, (query,))
+            cur.execute("""SELECT COUNT(*) FROM info_keyword WHERE keyword = %s """, (query,))
             
             count = cur.fetchone()[0]
             
@@ -998,7 +966,7 @@ with tab_keyword:
 
             cur.execute("""
             SELECT search_unique_id, keyword, channel_name, video_title, video_view_subscriber_ratio, is_shorts
-            FROM keyword_info
+            FROM info_keyword
             WHERE keyword = %s
             ORDER BY search_unique_id DESC
             """, (st.session_state.current_keyword,))
@@ -1041,7 +1009,7 @@ with tab_keyword:
         except Exception as e:
             st.error(f"결과 조회 중 오류가 발생했습니다: {str(e)}")
     
-    # 키워드 분석 진행 
+    # 키워드 분석 진행
     if st.session_state.keyword_status == 'confirmed' and st.session_state.current_keyword:
         with st.spinner("키워드 정보를 가져오는 중..."):
             try:
@@ -1078,7 +1046,7 @@ with tab_keyword:
                     
                     # 데이터베이스에 저장
                     save_info(
-                        'keyword_info', pk_id, query, channel_url, video['channel'], video['subscribers'],
+                        'info_keyword', pk_id, query, channel_url, video['channel'], video['subscribers'],
                         video_id, video['title'], video['thumbnail'], video['views'], video['likes'], video['comments'], video['view_sub_ratio'],
                         video['is_shorts'], video['1min_script'], video['publishedAt'], comments
                     )
@@ -1139,9 +1107,22 @@ with tab_keyword:
     st.info("아래 목록에서 분석하고 싶은 키워드의 '분석' 버튼을 클릭하세요.")
     #
     try:
-        top_videos_df = get_top_videos_by_search_id('keyword_info')
+        top_videos_df = get_top_videos_by_search_id('info_keyword')
         
         if not top_videos_df.empty:
+            search_keyword = st.text_input("조회할 키워드를 입력하세요.", key='search_keyword_kw')
+            search_channel = st.text_input("조회할 채널명을 입력하세요.", key='search_channel_kw')
+            
+            filtered_df = top_videos_df.copy()
+            
+            # 키워드 필터링
+            if search_keyword:
+                filtered_df = filtered_df[filtered_df['키워드'].str.contains(search_keyword, case=False, na=False)]
+            
+            # 채널명 필터링
+            if search_channel:
+                filtered_df = filtered_df[filtered_df['채널명'].str.contains(search_channel, case=False, na=False)]
+            
             # 버튼 동작을 위한 콜백 함수
             def analyze_keyword(search_id):
                 st.session_state.search_clicked_keyword = True
@@ -1157,27 +1138,27 @@ with tab_keyword:
                 st.session_state.selected_search_id_keyword = search_id
                 
                 # 데이터 로드
-                display_df = load_info(search_id, 'keyword_info')
+                display_df = load_info(search_id, 'info_keyword')
                 st.session_state.found_data_keyword = display_df
             
             # 버튼 열과 데이터프레임을 나란히 배치
             col_buttons, col_table = st.columns([1, 7])
 
             with col_buttons:
-                for _, row in top_videos_df.iterrows():
+                for _, row in filtered_df.iterrows():
                     search_id = row['pk_ID']
                     if st.button(f"📊 ID {search_id} 분석", key=f"btn_analyze_keyword_{search_id}"):
                         analyze_keyword(search_id)
             
-            # 각 행에 분석 버튼 추가를 위한 버튼 열 생성
-            top_videos_df['분석'] = top_videos_df['pk_ID'].apply(
-                lambda x: f'<button key="analyze_{x}">분석</button>'
-            )
+            # # 각 행에 분석 버튼 추가를 위한 버튼 열 생성
+            # top_videos_df['분석'] = top_videos_df['pk_ID'].apply(
+            #     lambda x: f'<button key="analyze_{x}">분석</button>'
+            # )
 
             # 데이터 표시
             with col_table:
                 st.dataframe(
-                    top_videos_df,
+                    filtered_df,
                     column_config={
                         "썸네일": st.column_config.ImageColumn(width="large", help="영상 썸네일"),
                         "검색ID": st.column_config.Column(width="small", help="이 ID를 아래 입력란에 입력하여 상세 분석"),
@@ -1202,16 +1183,20 @@ with tab_keyword:
 
                 # # 각 행에 대해 버튼을 생성하고, 클릭 시 분석 실행
                 # for index, row in top_vids.iterrows():
-                #     # 버튼을 각 행에 맞게 출력
-                #     if st.button(f"📊 ID {row['pk_ID']} 분석", key=f"btn_analyze_keyword_{row['pk_ID']}"):
-                #         analyze_keyword(row['pk_ID'])  # 버튼 클릭 시 분석 함수 호출
-                #         top_vids['분석'] = f"📊 ID {row['pk_ID']} 분석"
+                #     # # 버튼을 각 행에 맞게 출력
+                #     # if st.button(f"📊 ID {row['pk_ID']} 분석", key=f"btn_analyze_keyword_{row['pk_ID']}"):
+                #     #     analyze_keyword(row['pk_ID'])  # 버튼 클릭 시 분석 함수 호출
+                #     #     top_vids['분석'] = f"📊 ID {row['pk_ID']} 분석"
+                #     top_vids['분석'] = st.button('분석', key=f'something_{index}')
 
                 # # 버튼이 포함된 데이터프레임을 HTML로 변환하여 표시
                 # display = top_vids[['분석', 'pk_ID', '키워드', '채널명', '제목', '조회수', '조회수/구독자 비율', '쇼츠']]
 
                 # # 테이블을 HTML로 렌더링하여 표시
                 # st.markdown(display.to_html(escape=False, index=False), unsafe_allow_html=True)
+            
+            # 도움말 메시지 수정
+            st.info("👆 위 목록에서 분석하고 싶은 키워드의 '분석' 버튼을 클릭하세요.")
         else:
             st.warning("저장된 채널 데이터가 없습니다.")
     except Exception as e:
@@ -1221,17 +1206,6 @@ with tab_keyword:
     # # 특정 채널 상세 분석 섹션
     # st.subheader("특정 검색ID 상세 분석")
     # search_id_input = st.number_input("키워드에 대해 분석할 pk_ID를 입력하세요", min_value=1, step=1)
-    
-    # # 검색 버튼 콜백
-    # def on_search_click_tab4():
-    #     st.session_state.search_clicked_tab4 = True
-    #     st.session_state.shorts_analyzed_tab4 = False
-    #     st.session_state.longform_analyzed_tab4 = False
-    #     st.session_state.shorts_analysis_result_tab4 = None
-    #     st.session_state.longform_analysis_result_tab4 = None
-    #     st.session_state.shorts_thumbnail_analysis_tab4 = None  # 추가
-    #     st.session_state.longform_thumbnail_analysis_tab4 = None  # 추가
-    #     st.session_state.found_data_tab4 = None  # 새 검색 시 데이터 초기화
         
     # 쇼츠 분석 버튼 콜백
     def on_analyze_shorts_click_keyword():
@@ -1251,7 +1225,7 @@ with tab_keyword:
     if st.session_state.search_clicked_keyword:
         try:
             if 'found_data_keyword' not in st.session_state or st.session_state.found_data_keyword is None:
-                display_df = load_info(st.session_state.selected_search_id_keyword, 'keyword_info')  # display_df = load_info(search_id_input, 'keyword_info')
+                display_df = load_info(st.session_state.selected_search_id_keyword, 'info_keyword')  # display_df = load_info(search_id_input, 'info_keyword')
                 st.session_state.found_data_keyword = display_df
             else:
                 display_df = st.session_state.found_data_keyword
@@ -1332,7 +1306,7 @@ with tab_keyword:
                                     cur = conn.cursor()
                     
                                     cur.execute("""
-                                    SELECT COUNT(*) FROM keyword_analysis 
+                                    SELECT COUNT(*) FROM analysis_keyword
                                     WHERE search_unique_id = %s AND is_shorts = TRUE
                                     """, (st.session_state.selected_search_id_keyword,))
                                     
@@ -1358,12 +1332,12 @@ with tab_keyword:
 
                             col1, col2 = st.columns(2)
                             with col1:
-                                if st.button("예", key="confirm_shorts_yes"):
+                                if st.button("예", key="confirm_shorts_yes_kw"):
                                     st.session_state.shorts_analysis_status = 'confirmed'
                                     on_analyze_shorts_click_keyword()  # 콜백 함수 호출
                                     st.rerun()
                             with col2:
-                                if st.button("아니오", key="confirm_shorts_no"):
+                                if st.button("아니오", key="confirm_shorts_no_kw"):
                                     st.session_state.shorts_analysis_status = 'show_existing'
                                     st.rerun()
                         
@@ -1375,7 +1349,7 @@ with tab_keyword:
                                 # 이전 분석 결과 가져오기
                                 cur.execute("""
                                 SELECT search_unique_id, keyword_result, created_at 
-                                FROM keyword_analysis 
+                                FROM analysis_keyword 
                                 WHERE search_unique_id = %s AND is_shorts = TRUE
                                 ORDER BY created_at DESC
                                 """, (st.session_state.selected_search_id_keyword,))
@@ -1399,7 +1373,7 @@ with tab_keyword:
                                         
                                     #     cur.execute("""
                                     #     SELECT thumbnail_url, thumbnail_analysis 
-                                    #     FROM thumbnail_analysis 
+                                    #     FROM analysis_thumbnail 
                                     #     WHERE search_unique_id = %s AND is_shorts = TRUE
                                     #     ORDER BY created_at DESC LIMIT 3
                                     #     """, (st.session_state.selected_search_id_keyword,))
@@ -1423,7 +1397,7 @@ with tab_keyword:
                                     st.info("해당 키워드의 기존 쇼츠 분석 결과를 찾을 수 없습니다.")
                                 
                                 # 새 분석 시작 버튼
-                                if st.button("새 분석 시작", key="new_shorts_analysis"):
+                                if st.button("새 분석 시작", key="new_shorts_analysis_kw"):
                                     st.session_state.shorts_analysis_status = 'initial'
                                     st.rerun()
                                     
@@ -1442,7 +1416,7 @@ with tab_keyword:
                                     st.session_state.shorts_thumbnail_analysis_keyword = thumbnail_analysis_shorts
                                     
                                     # 분석 내용 저장
-                                    save_video_analysis_keyword('keyword_analysis', st.session_state.selected_search_id_keyword, True, shorts_analysis)  # save_video_analysis('keyword_analysis', search_id_input, True, shorts_analysis)
+                                    save_video_analysis_keyword('analysis_keyword', st.session_state.selected_search_id_keyword, True, shorts_analysis)  # save_video_analysis('keyword_analysis', search_id_input, True, shorts_analysis)
                                     save_thumbnail_analysis(thumbnail_analysis_shorts, st.session_state.selected_search_id_keyword, True, display_df['채널URL'].iloc[0])  # save_thumbnail_analysis(thumbnail_analysis_shorts, search_id_input, True, display_df['채널URL'].iloc[0])
                                     
                                     st.success("쇼츠 영상 분석 완료 및 저장되었습니다!")
@@ -1494,7 +1468,7 @@ with tab_keyword:
                                     cur = conn.cursor()
                     
                                     cur.execute("""
-                                    SELECT COUNT(*) FROM keyword_analysis 
+                                    SELECT COUNT(*) FROM analysis_keyword 
                                     WHERE search_unique_id = %s AND is_shorts = FALSE
                                     """, (st.session_state.selected_search_id_keyword,))
                                     
@@ -1520,12 +1494,12 @@ with tab_keyword:
 
                             col1, col2 = st.columns(2)
                             with col1:
-                                if st.button("예", key="confirm_longform_yes"):
+                                if st.button("예", key="confirm_longform_yes_kw"):
                                     st.session_state.longform_analysis_status = 'confirmed'
                                     on_analyze_longform_click_keyword()  # 콜백 함수 호출
                                     st.rerun()
                             with col2:
-                                if st.button("아니오", key="confirm_longform_no"):
+                                if st.button("아니오", key="confirm_longform_no_kw"):
                                     st.session_state.longform_analysis_status = 'show_existing'
                                     st.rerun()
                         
@@ -1537,7 +1511,7 @@ with tab_keyword:
                                 # 이전 분석 결과 가져오기
                                 cur.execute("""
                                 SELECT search_unique_id, keyword_result, created_at 
-                                FROM keyword_analysis 
+                                FROM analysis_keyword 
                                 WHERE search_unique_id = %s AND is_shorts = FALSE
                                 ORDER BY created_at DESC
                                 """, (st.session_state.selected_search_id_keyword,))
@@ -1561,7 +1535,7 @@ with tab_keyword:
                                         
                                     #     cur.execute("""
                                     #     SELECT thumbnail_url, thumbnail_analysis 
-                                    #     FROM thumbnail_analysis 
+                                    #     FROM analysis_thumbnail 
                                     #     WHERE search_unique_id = %s AND is_shorts = FALSE
                                     #     ORDER BY created_at DESC LIMIT 3
                                     #     """, (st.session_state.selected_search_id_keyword,))
@@ -1585,7 +1559,7 @@ with tab_keyword:
                                     st.info("이 채널에 대한 기존 롱폼 분석 결과를 찾을 수 없습니다.")
                                 
                                 # 새 분석 시작 버튼
-                                if st.button("새 분석 시작", key="new_longform_analysis"):
+                                if st.button("새 분석 시작", key="new_longform_analysis_kw"):
                                     st.session_state.longform_analysis_status = 'initial'
                                     st.rerun()
                                     
@@ -1604,7 +1578,7 @@ with tab_keyword:
                                     st.session_state.longform_thumbnail_analysis_keyword = thumbnail_analysis_long
                                     
                                     # 분석 내용 저장
-                                    save_video_analysis_keyword('keyword_analysis', st.session_state.selected_search_id_keyword, False, longform_analysis)  # save_video_analysis('keyword_analysis', search_id_input, False, longform_analysis)
+                                    save_video_analysis_keyword('analysis_keyword', st.session_state.selected_search_id_keyword, False, longform_analysis)  # save_video_analysis('keyword_analysis', search_id_input, False, longform_analysis)
                                     save_thumbnail_analysis(thumbnail_analysis_long, st.session_state.selected_search_id_keyword, False, display_df['채널URL'].iloc[0])  # save_thumbnail_analysis(thumbnail_analysis_long, search_id_input, False, display_df['채널URL'].iloc[0])
                                     
                                     st.success("롱폼 영상 분석 완료 및 저장되었습니다!")
@@ -1638,7 +1612,7 @@ with tab_keyword:
     st.markdown("---")
 
     try:
-        st.subheader("키워드 정리")
+        st.subheader("쇼츠, 롱폼 동영상 분석 리스트")
         
         conn = connect_postgres()
         cur = conn.cursor()
@@ -1647,7 +1621,7 @@ with tab_keyword:
         SELECT 
             search_unique_id, is_shorts, keyword_result, created_at
         FROM 
-            keyword_analysis
+            analysis_keyword
         ORDER BY
             created_at DESC
         """)
@@ -1673,15 +1647,16 @@ with tab_keyword:
     except Exception as e:
         st.error(f"분석된 키워드 리스트 조회 중 오류가 발생했습니다: {str(e)}")
 
-# 블로그 분석 탭
+# 블로그 요약 탭
 with tab_blog:
-    st.subheader("블로그 분석")
-
-    analysis_keyword = st.text_input('블로그 분석을 위한 키워드를 입력하세요. 분석 그룹의 이름을 결정합니다.')
+    st.subheader("블로그 요약")
+    analysis_keyword = st.text_input('블로그 요약을 위한 키워드를 입력하세요. 분석 그룹의 이름을 결정합니다.')
     
     # 세션 상태에 URL 리스트 초기화
     if 'blog_urls' not in st.session_state:
         st.session_state.blog_urls = [""] * 10  # 10개의 빈 URL로 초기화
+
+    st.info("요약할 블로그 게사물들의 주소를 입력하세요.")
     
     # 5개씩 두 열로 나눠서 URL 입력 필드 생성
     col1, col2 = st.columns(2)
@@ -1712,9 +1687,9 @@ with tab_blog:
     valid_urls = [url for url in st.session_state.blog_urls if url.strip()]
     
     # 분석 버튼과 상태 표시
-    analyse_button = st.button("블로그 분석 시작", type="primary", disabled=len(valid_urls) == 0 or not analysis_keyword)
+    analyse_button = st.button("블로그 요약 시작", type="primary", disabled=len(valid_urls) == 0 or not analysis_keyword)
     
-    # 블로그 분석 실행
+    # 블로그 요약 실행
     if analysis_keyword and valid_urls and analyse_button:
         results_container = st.container()  # 분석 결과 저장용 컨테이너
 
@@ -1728,7 +1703,7 @@ with tab_blog:
         # 각 URL 처리
         for i, url in enumerate(valid_urls):
             try:
-                with st.spinner(f"블로그 분석 중... ({i+1}/{len(valid_urls)})"):
+                with st.spinner(f"블로그 요약 중... ({i+1}/{len(valid_urls)})"):
                     extracted_data = blog_content(url)  # 블로그 내용 추출
                     
                     blog_summary = blog_summarizer(openai_client, llm_option, extracted_data['content'])  # 블로그 요약
@@ -1767,7 +1742,7 @@ with tab_blog:
         
         # 분석 완료 후 결과 표시
         with results_container:
-            st.subheader("블로그 분석 결과")
+            st.subheader("블로그 요약 결과")
             
             if success_count > 0:
                 st.success(f"{success_count}개의 블로그가 성공적으로 분석되었습니다.")
@@ -1795,14 +1770,14 @@ with tab_blog:
             
             # 실패한 URL 표시
             if failed_urls:
-                st.error(f"{len(failed_urls)}개의 블로그 분석에 실패했습니다.")
+                st.error(f"{len(failed_urls)}개의 블로그 요약에 실패했습니다.")
                 for url, error in failed_urls:
                     with st.expander(f"실패한 URL: {url}"):
                         st.error(f"오류: {error}")
     
     st.markdown("---")
     
-    st.subheader("블로그 통합 분석")
+    st.subheader("블로그 통합 요약")
 
     st.info("키워드별 블로그 중 첫 번째 블로그에 대한 요약 내용입니다.")
     
@@ -1836,19 +1811,50 @@ with tab_blog:
             
             # 데이터프레임으로 변환
             df = pd.DataFrame(table_data)
+
+            col1, col2 = st.columns([1, 7])
             
-            # 테이블 표시
-            st.dataframe(
-                df,
-                column_config={
-                    "ID": st.column_config.Column(width="small"),
-                    "키워드": st.column_config.Column(width="medium"),
-                    "요약 미리보기": st.column_config.Column(width="large"),
-                    "URL": st.column_config.Column(width="medium")
-                },
-                hide_index=True,
-                use_container_width=True
-            )
+            with col1:
+                # 각 행마다 버튼 생성
+                for i, row in df.iterrows():
+                    load_keyword = row['키워드']
+                    if st.button(f"📊 {load_keyword} 분석", key=f"btn_analyze_{load_keyword}_{i}", help=f"키워드 '{load_keyword}' 분석"):
+                        # 세션 상태 설정
+                        st.session_state.current_blog_keyword = load_keyword
+                        
+                        # 데이터베이스 확인
+                        conn = connect_postgres()
+                        cur = conn.cursor()
+                        
+                        cur.execute("""SELECT COUNT(*) FROM blog_int_summary WHERE keyword = %s """, (load_keyword,))
+                        count = cur.fetchone()[0]
+                        
+                        cur.close()
+                        conn.close()
+                        
+                        # 결과에 따라 상태 설정
+                        if count > 0:
+                            st.session_state.blog_keyword_status = 'confirm_needed'
+                        else:
+                            st.session_state.blog_keyword_status = 'confirmed'
+                        
+                        # 페이지 강제 새로고침
+                        st.rerun()
+            
+            with col2:
+                # 테이블 표시
+                st.dataframe(
+                    df,
+                    column_config={
+                        "ID": st.column_config.Column(width="small"),
+                        "키워드": st.column_config.Column(width="medium"),
+                        "요약 미리보기": st.column_config.Column(width="large"),
+                        "URL": st.column_config.Column(width="medium")
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+            
             
             # 상세 내용 보기 섹션
             selected_id = st.selectbox(
@@ -1883,32 +1889,8 @@ with tab_blog:
         st.session_state.blog_keyword_status = 'initial'  # 'initial', 'confirmed', 'show_existing'
     if 'current_blog_keyword' not in st.session_state:
         st.session_state.current_blog_keyword = None
-
-    load_keyword = st.text_input('키워드를 입력하세요. 해당 키워드로 그루핑된 블로그 내용들을 통합 분석합니다.')
-
-    # "분석 시작" 버튼 클릭 처리
-    if st.button("통합 분석 시작", type="primary"):
-        # 키워드 저장
-        st.session_state.current_blog_keyword = load_keyword
-        
-        # 데이터베이스 확인
-        conn = connect_postgres()
-        cur = conn.cursor()
-        
-        cur.execute("""SELECT COUNT(*) FROM blog_int_summary WHERE keyword = %s """, (load_keyword,))
-        count = cur.fetchone()[0]
-        
-        cur.close()
-        conn.close()
-        
-        # 결과에 따라 상태 설정
-        if count > 0:
-            st.session_state.blog_keyword_status = 'confirm_needed'
-        else:
-            st.session_state.blog_keyword_status = 'confirmed'
-        
-        # 페이지 강제 새로고침
-        st.rerun()
+    if 'blog_id' not in st.session_state:
+        st.session_state.blog_id = None
 
     # 확인이 필요한 경우 - 메시지와 버튼 표시
     if st.session_state.blog_keyword_status == 'confirm_needed':
@@ -1944,9 +1926,20 @@ with tab_blog:
             if existing_results:
                 st.subheader(f"키워드 '{st.session_state.current_blog_keyword}'의 기존 통합 분석 결과")
                 
-                for i, (search_id, summary) in enumerate(existing_results):
-                    with st.expander(f"분석 결과 #{i+1} (ID: {search_id}", expanded=(i==0)):
-                        st.markdown(summary)
+                # for i, (search_id, summary) in enumerate(existing_results):
+                #     with st.expander(f"분석 결과 #{i+1} (ID: {search_id}", expanded=(i==0)):
+                #         st.markdown(summary)
+                
+                int_sum_df = pd.DataFrame(existing_results, columns=['ID', '요약'])
+                st.dataframe(
+                    int_sum_df, 
+                    column_config={
+                        "ID": st.column_config.Column(width="small"),
+                        "요약": st.column_config.Column(width="large"),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
             else:
                 st.info(f"키워드 '{st.session_state.current_blog_keyword}'에 대한 통합 분석 결과를 찾을 수 없습니다.")
             
@@ -1961,7 +1954,7 @@ with tab_blog:
             
     # 분석된 적 없는 키워드인 경우 그냥 분석 진행
     if st.session_state.blog_keyword_status == 'confirmed' and st.session_state.current_blog_keyword:
-        with st.spinner(f"키워드 '{load_keyword}'로 저장된 블로그 요약을 통합 분석 중..."):
+        with st.spinner(f"키워드 '{st.session_state.current_blog_keyword}'로 저장된 블로그 요약을 통합 분석 중..."):
             try:
                 # 데이터베이스에서 해당 키워드로 저장된 요약 조회
                 conn = connect_postgres()
@@ -1970,16 +1963,16 @@ with tab_blog:
                 cur.execute("""
                 SELECT summary FROM blog_summary 
                 WHERE keyword = %s
-                """, (load_keyword,))
+                """, (st.session_state.current_blog_keyword,))
                 
                 summaries = [row[0] for row in cur.fetchall()]
                 
                 # 조회된 요약이 없는 경우
                 if not summaries:
-                    st.error(f"키워드 '{load_keyword}'로 저장된 블로그 요약이 없습니다.")
+                    st.error(f"키워드 '{st.session_state.current_blog_keyword}'로 저장된 블로그 요약이 없습니다.")
                 else:
                     # 통합 분석을 위한 프롬프트 작성
-                    prompt = f"""다음은 "{load_keyword}" 키워드와 관련된 {len(summaries)}개의 블로그 포스트 요약입니다:"""
+                    prompt = f"""다음은 "{st.session_state.current_blog_keyword}" 키워드와 관련된 {len(summaries)}개의 블로그 포스트 요약입니다:"""
                     
                     for i, summary in enumerate(summaries):
                         prompt += f"\n--- 블로그 {i+1} ---\n{summary}\n"
@@ -2055,7 +2048,7 @@ with tab_content:
         conn = connect_postgres()
         cur = conn.cursor()
         
-        # 모든 통합 블로그 분석 데이터 조회
+        # 모든 통합 블로그 요약 데이터 조회
         cur.execute("""SELECT search_unique_id, keyword FROM blog_int_summary""")
         
         blog_summaries = cur.fetchall()
@@ -2084,7 +2077,7 @@ with tab_content:
             
             # 통합 분석 내용 보기 섹션
             selected_id = st.selectbox(
-                "상세 내용을 확인할 블로그 분석 ID를 선택하세요:",
+                "상세 내용을 확인할 블로그 요약 ID를 선택하세요:",
                 options=[row[0] for row in blog_summaries],
                 format_func=lambda x: f"ID: {x} - 키워드: {df[df['분석ID']==x]['키워드'].values[0]}"
             )
@@ -2140,7 +2133,7 @@ with tab_content:
             st.error(f"입력한 블로그 ID '{blog_id}'를 찾을 수 없습니다.")
         else:
             # 이미 유튜브 콘텐츠가 있는지 확인
-            cur.execute("""SELECT COUNT(*) FROM youtube_content WHERE blog_id = %s """, (blog_id,))
+            cur.execute("""SELECT COUNT(*) FROM content_youtube WHERE blog_id = %s """, (blog_id,))
             content_exists = cur.fetchone()[0]
             
             if content_exists > 0:
@@ -2152,7 +2145,7 @@ with tab_content:
         conn.close()
         st.rerun()
     elif yt_button and not blog_id:
-        st.warning("블로그 분석 ID를 입력해주세요.")
+        st.warning("블로그 요약 ID를 입력해주세요.")
         
     # 생성전에 확인
     if st.session_state.youtube_status == 'confirm_needed':
@@ -2175,7 +2168,7 @@ with tab_content:
 
             cur.execute("""
             SELECT blog_id, keyword, title, created_at
-            FROM youtube_content 
+            FROM content_youtube 
             WHERE blog_id = %s 
             ORDER BY created_at DESC
             """, (st.session_state.current_blog_id,))
@@ -2222,7 +2215,7 @@ with tab_content:
                 # 긍정적인 평가 내용 불러오기
                 cur.execute("""
                 SELECT score, feedback, title, thumbnail, script
-                FROM feedback
+                FROM feedback_yt
                 WHERE platform = 'YouTube' AND score >= 7
                 ORDER BY score DESC
                 LIMIT 3
@@ -2232,7 +2225,7 @@ with tab_content:
                 # 부정적인 평가 내용 불러오기
                 cur.execute("""
                 SELECT score, feedback, title, thumbnail, script
-                FROM feedback
+                FROM feedback_yt
                 WHERE platform = 'YouTube' AND score <= 4
                 ORDER BY score ASC
                 LIMIT 3
@@ -2246,7 +2239,7 @@ with tab_content:
                     blog_summary = result[0]
                     keyword = result[1]
                 else:
-                    st.error(f"ID {blog_id}에 해당하는 블로그 분석을 찾을 수 없습니다.")
+                    st.error(f"ID {blog_id}에 해당하는 블로그 요약을 찾을 수 없습니다.")
                     st.stop()
 
                 # 피드백 데이터 요약 및 통합
@@ -2350,7 +2343,7 @@ with tab_content:
                             
                         # 생성된 콘텐츠 저장
                         cur.execute("""
-                            INSERT INTO youtube_content (blog_id, keyword, title, thumbnail, script)
+                            INSERT INTO content_youtube (blog_id, keyword, title, thumbnail, script)
                             VALUES (%s, %s, %s, %s, %s)
                             """, (blog_id, keyword, title, thumbnail, script))
                         
@@ -2386,7 +2379,7 @@ with tab_content:
             st.error(f"입력한 블로그 ID '{blog_id}'를 찾을 수 없습니다.")
         else:
             # 이미 유튜브 콘텐츠가 있는지 확인
-            cur.execute("""SELECT COUNT(*) FROM instagram_content WHERE blog_id = %s """, (blog_id,))
+            cur.execute("""SELECT COUNT(*) FROM content_instagram WHERE blog_id = %s """, (blog_id,))
             content_exists = cur.fetchone()[0]
             
             if content_exists > 0:
@@ -2398,7 +2391,7 @@ with tab_content:
         conn.close()
         st.rerun()
     elif insta_button and not blog_id:
-        st.warning("블로그 분석 ID를 입력해주세요.")
+        st.warning("블로그 요약 ID를 입력해주세요.")
         
     # 생성전에 확인
     if st.session_state.instagram_status == 'confirm_needed':
@@ -2421,7 +2414,7 @@ with tab_content:
 
             cur.execute("""
             SELECT blog_id, keyword, pics, caption, hashtags
-            FROM instagram_content 
+            FROM content_instagram 
             WHERE blog_id = %s 
             """, (st.session_state.current_blog_id,))
 
@@ -2468,7 +2461,7 @@ with tab_content:
                     blog_summary = result[0]
                     keyword = result[1]
                 else:
-                    st.error(f"ID {blog_id}에 해당하는 블로그 분석을 찾을 수 없습니다.")
+                    st.error(f"ID {blog_id}에 해당하는 블로그 요약을 찾을 수 없습니다.")
                     st.stop()
 
 
@@ -2552,7 +2545,7 @@ with tab_content:
                             
                         # 생성된 콘텐츠 저장
                         cur.execute("""
-                            INSERT INTO instagram_content (blog_id, keyword, pics, caption, hashtags)
+                            INSERT INTO content_instagram (blog_id, keyword, pics, caption, hashtags)
                             VALUES (%s, %s, %s, %s, %s)
                             """, (blog_id, keyword, pics, caption, hashtags))
                         
@@ -2588,7 +2581,7 @@ with tab_content:
             st.error(f"입력한 블로그 ID '{blog_id}'를 찾을 수 없습니다.")
         else:
             # 이미 유튜브 콘텐츠가 있는지 확인
-            cur.execute("""SELECT COUNT(*) FROM threads_content WHERE blog_id = %s """, (blog_id,))
+            cur.execute("""SELECT COUNT(*) FROM content_threads WHERE blog_id = %s """, (blog_id,))
             content_exists = cur.fetchone()[0]
             
             if content_exists > 0:
@@ -2600,7 +2593,7 @@ with tab_content:
         conn.close()
         st.rerun()
     elif thrd_button and not blog_id:
-        st.warning("블로그 분석 ID를 입력해주세요.")
+        st.warning("블로그 요약 ID를 입력해주세요.")
         
     # 생성전에 확인
     if st.session_state.threads_status == 'confirm_needed':
@@ -2623,7 +2616,7 @@ with tab_content:
 
             cur.execute("""
             SELECT blog_id, keyword, post, pics, tags
-            FROM threads_content 
+            FROM content_threads 
             WHERE blog_id = %s 
             """, (st.session_state.current_blog_id,))
 
@@ -2670,7 +2663,7 @@ with tab_content:
                     blog_summary = result[0]
                     keyword = result[1]
                 else:
-                    st.error(f"ID {blog_id}에 해당하는 블로그 분석을 찾을 수 없습니다.")
+                    st.error(f"ID {blog_id}에 해당하는 블로그 요약을 찾을 수 없습니다.")
                     st.stop()
 
                 prompt = f"""새로 만들 Threads 콘텐츠를 작성하고자 합니다.
@@ -2743,7 +2736,7 @@ with tab_content:
                         
                         # 생성된 콘텐츠 저장
                         cur.execute("""
-                            INSERT INTO threads_content (blog_id, keyword, post, pics, tags)
+                            INSERT INTO content_threads (blog_id, keyword, post, pics, tags)
                             VALUES (%s, %s, %s, %s, %s)
                             """, (blog_id, keyword, post, pics, tags))
                         
@@ -2803,7 +2796,7 @@ with tab_content:
             # 모든 유튜브 콘텐츠 조회
             cur.execute("""
             SELECT id, keyword, title, thumbnail, script 
-            FROM youtube_content 
+            FROM content_youtube 
             ORDER BY created_at DESC
             """)
             
@@ -2844,7 +2837,7 @@ with tab_content:
                 
                 cur.execute("""
                 SELECT title, thumbnail, script
-                FROM youtube_content
+                FROM content_youtube
                 WHERE id = %s
                 """, (content_id_yt,))
                 
@@ -2883,7 +2876,7 @@ with tab_content:
             # 모든 인스타그램 콘텐츠 조회
             cur.execute("""
             SELECT id, keyword, pics, caption, hashtags 
-            FROM instagram_content 
+            FROM content_instagram 
             ORDER BY created_at DESC
             """)
             
@@ -2924,7 +2917,7 @@ with tab_content:
                 
                 cur.execute("""
                 SELECT pics, caption, hashtags
-                FROM instagram_content
+                FROM content_instagram
                 WHERE id = %s
                 """, (content_id_ig,))
                 
@@ -3002,7 +2995,7 @@ with tab_content:
                 
                 cur.execute("""
                 SELECT post, pics, tags
-                FROM threads_content
+                FROM content_threads
                 WHERE id = %s
                 """, (content_id_th,))
                 
@@ -3030,7 +3023,7 @@ with tab_content:
                 st.warning("개선 사항이나 의견을 입력해주세요.")
 
 # 분석 내용 확인하기 탭
-with tab_analysis:
+with tab_result:
     st.info("지금까지 분석한 썸네일 이미지에 대한 정보를 조회하는 공간입니다.")
     try:
         st.subheader("썸네일 분석 결과")
@@ -3042,7 +3035,7 @@ with tab_analysis:
         SELECT 
             video_thumbnail, search_unique_id, keyword, channel_url, channel_name, video_id, video_title, is_shorts, thumbnail_result
         FROM 
-            thumbnail_analysis
+            analysis_thumbnail
         ORDER BY
             created_at DESC
         """)
