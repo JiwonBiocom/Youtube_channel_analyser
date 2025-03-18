@@ -23,7 +23,7 @@ def save_feedback_yt(search_unique_id, title, thumbnail, script, score, feedback
         
         # 피드백 테이블 생성 (없는 경우)
         cur.execute("""
-        CREATE TABLE IF NOT EXISTS feedback (
+        CREATE TABLE IF NOT EXISTS feedback_yt (
             id SERIAL PRIMARY KEY,
             search_unique_id INTEGER NOT NULL,
             title TEXT NOT NULL, 
@@ -38,7 +38,7 @@ def save_feedback_yt(search_unique_id, title, thumbnail, script, score, feedback
         
         # 피드백 저장
         cur.execute("""
-        INSERT INTO feedback (search_unique_id, title, thumbnail, script, score, feedback, platform)
+        INSERT INTO feedback_yt (search_unique_id, title, thumbnail, script, score, feedback, platform)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (search_unique_id, title, thumbnail, script, score, feedback_text, platform))
         
@@ -106,7 +106,7 @@ def save_feedback_th(search_unique_id, post, pics, tags, score, feedback_text):
         
         # 피드백 저장
         cur.execute("""
-        INSERT INTO feedback (search_unique_id, post, pics, tags, score, feedback)
+        INSERT INTO feedback_th (search_unique_id, post, pics, tags, score, feedback)
         VALUES (%s, %s, %s, %s, %s, %s)
         """, (search_unique_id, post, pics, tags, score, feedback_text))
         
