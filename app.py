@@ -2954,7 +2954,7 @@ with tab_content:
             # 모든 인스타그램 콘텐츠 조회
             cur.execute("""
             SELECT id, keyword, post, pics, tags 
-            FROM threads_content 
+            FROM content_threads
             ORDER BY created_at DESC
             """)
             
