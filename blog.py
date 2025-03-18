@@ -68,3 +68,24 @@ def blog_content(url):
     except Exception as e:
         print(f"오류 발생: {e}")
         return {"title": "오류 발생", "content": f"콘텐츠를 추출하는 도중 오류가 발생했습니다: {str(e)}"}
+
+def blog_summarizer(client, llm, text):
+    try:
+        # 입력 텍스트가 너무 길 경우 제한 (API 제한을 고려)
+        if len(text) > 15000:
+            text = text[:15000] + "..."
+    
+        summary = client.chat.completions.create(
+            model=llm,  # 'gpt-4o-2024-08-06'
+            messages=[
+                {"role": "system", "content": "다음 블로그 포스트를 명확하고 간결하게 요약해주세요. 핵심 내용과 주요 포인트를 포함시켜야 합니다."},
+                {"role": "user", "content": text}
+            ],
+            temperature=0.3, 
+            max_tokens=500,
+        )
+        
+        return summary.choices[0].message.content.strip()
+    
+    except Exception as e:
+        return {"블로그 내용 요약 중 오류가 발생했습니다.": str(e)}
