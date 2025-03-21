@@ -184,6 +184,8 @@ def get_top_videos_by_search_id(table_name):
     ]
     
     df = pd.DataFrame(results, columns=columns)
+
+    # df.insert(0, '분석', '')
     
     cur.close()
     conn.close()
