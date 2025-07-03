@@ -160,9 +160,9 @@ def get_top_videos_by_search_id(table_name):
     for search_id in search_ids:
         cur.execute(f"""
         SELECT 
-            video_thumbnail, search_unique_id, keyword, channel_name, video_id, video_title, 
+            video_thumbnail, search_unique_id, keyword, channel_name, channel_url, video_id, video_title, 
             video_view_count, video_like_count, video_comment_count, video_view_subscriber_ratio, 
-            is_shorts, comment_1, comment_2, comment_3, transcript
+            is_shorts, published_at, comment_1, comment_2, comment_3, transcript
         FROM 
             {table_name} 
         WHERE 
@@ -178,9 +178,9 @@ def get_top_videos_by_search_id(table_name):
     
     # 컬럼 이름
     columns = [
-        '썸네일', 'pk_ID', '키워드', '채널명', 'video_id', '제목', 
+        '썸네일', 'pk_ID', '키워드', '채널명', '채널URL', 'video_id', '제목', 
         '조회수', '좋아요', '댓글수', '조회수/구독자 비율', 
-        '쇼츠', '댓글1', '댓글2', '댓글3', '스크립트'
+        '쇼츠', '업로드 날짜', '댓글1', '댓글2', '댓글3', '스크립트'
     ]
     
     df = pd.DataFrame(results, columns=columns)
