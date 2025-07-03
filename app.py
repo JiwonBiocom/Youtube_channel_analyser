@@ -399,6 +399,7 @@ with tab_channel:
         if not top_videos_df.empty:
             search_keyword = st.text_input("조회할 키워드를 입력하세요.", key='search_keyword_ch')
             search_channel = st.text_input("조회할 채널명을 입력하세요.", key='search_channel_ch')
+            search_date = st.text_input("업로드 시점을 입력하세요. 연도-월-일 형태로 입력하세요. (예 2025-01-01)", key='search_date_ch')
             
             filtered_df = top_videos_df.copy()
             
@@ -409,6 +410,10 @@ with tab_channel:
             # 채널명 필터링
             if search_channel:
                 filtered_df = filtered_df[filtered_df['채널명'].str.contains(search_channel, case=False, na=False)]
+
+            if search_date:
+                # Convert '업로드 날짜' to string and filter by year/month
+                filtered_df = filtered_df[filtered_df['업로드 날짜'].astype(str).str.contains(search_date, case=False, na=False)]
 
             # 버튼 동작을 위한 콜백 함수
             def analyze_channel(search_id):
@@ -1111,6 +1116,7 @@ with tab_keyword:
         if not top_videos_df.empty:
             search_keyword = st.text_input("조회할 키워드를 입력하세요.", key='search_keyword_kw')
             search_channel = st.text_input("조회할 채널명을 입력하세요.", key='search_channel_kw')
+            search_date = st.text_input("업로드 시점을 입력하세요. 연도-월-일 형태로 입력하세요. (예 2025-01-01)", key='search_date_kw')
             
             filtered_df = top_videos_df.copy()
             
@@ -1121,6 +1127,10 @@ with tab_keyword:
             # 채널명 필터링
             if search_channel:
                 filtered_df = filtered_df[filtered_df['채널명'].str.contains(search_channel, case=False, na=False)]
+            
+            if search_date:
+                # Convert '업로드 날짜' to string and filter by year/month
+                filtered_df = filtered_df[filtered_df['업로드 날짜'].astype(str).str.contains(search_date, case=False, na=False)]
             
             # 버튼 동작을 위한 콜백 함수
             def analyze_keyword(search_id):
@@ -1246,6 +1256,7 @@ with tab_keyword:
                         "댓글 수": st.column_config.Column(width="small"),
                         "조회수/구독자 비율": st.column_config.Column(width="small"),
                         "쇼츠": st.column_config.Column(width="small"), 
+                        '업로드 날짜': st.column_config.TextColumn(width="large"), 
                         "댓글1": st.column_config.Column(width="large"), 
                         "댓글2": st.column_config.Column(width="large"), 
                         "댓글3": st.column_config.Column(width="large"), 
@@ -3351,6 +3362,7 @@ with tab_content:
                         "댓글수": st.column_config.Column(width="small"),
                         "조회수/구독자 비율": st.column_config.Column(width="small"),
                         "쇼츠": st.column_config.Column(width="small"), 
+                        "업로드 날짜": st.column_config.TextColumn(width="large"), 
                         "댓글1": st.column_config.Column(width="large"), 
                         "댓글2": st.column_config.Column(width="large"), 
                         "댓글3": st.column_config.Column(width="large"), 
